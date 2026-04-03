@@ -1,12 +1,12 @@
 # SkillSync
 
-Rust CLI tool for managing and syncing Claude Code skills, plugins, and MCP servers across machines and projects.
+一个用 Rust 编写的 CLI 工具，用于跨机器、跨项目管理和同步 Claude Code 的 skills、plugins 和 MCP servers。
 
-SkillSync uses a git-backed registry as the single source of truth, enabling one-command environment restoration, declarative project configuration, and automatic synchronization.
+SkillSync 使用 git 仓库作为配置的唯一真实来源，实现一行命令恢复完整环境、声明式项目配置和自动同步。
 
-## Installation
+## 安装
 
-### From source
+### 从源码编译
 
 ```bash
 git clone https://github.com/OWNER/skillsync.git
@@ -14,133 +14,137 @@ cd skillsync
 cargo install --path .
 ```
 
-### From release
+### 从 Release 下载
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OWNER/skillsync/main/install.sh | sh
 ```
 
-## Quick Start
+脚本会自动检测操作系统和架构（macOS/Linux, x86_64/aarch64），下载对应的预编译二进制文件。
+
+## 快速上手
+
+### 首次使用
 
 ```bash
-# 1. Initialize a new registry
+# 1. 初始化一个新的 registry
 skillsync init
 
-# 2. Add your existing skills to the registry
+# 2. 把现有的 skill 添加到 registry
 skillsync add ~/.claude/skills/my-skill
 
-# 3. Add a plugin
+# 3. 添加插件
 skillsync add --plugin superpowers@claude-plugins-official
 
-# 4. Add an MCP server
+# 4. 添加 MCP server
 skillsync add --mcp openspec --command npx --args -y @fission-ai/openspec-mcp
 
-# 5. In a project directory, interactively select resources
+# 5. 在项目目录下，交互式选择需要的资源
 skillsync use
 
-# 6. Or install from an existing skillsync.yaml
+# 6. 或者从已有的 skillsync.yaml 安装
 skillsync install
 ```
 
-### On a new machine
+### 换机器 / 新环境
 
 ```bash
-# Clone your registry from remote
+# 从远程克隆你的 registry
 skillsync init --from git@github.com:you/skillsync-registry.git
 
-# Install global skills and MCP servers
+# 安装全局 skills 和 MCP servers
 skillsync install --global
 
-# Set up auto-sync hook for Claude Code
+# 设置自动同步 hook（每次打开 Claude Code 自动拉取更新）
 skillsync hook install
 ```
 
-## Commands
+## 命令参考
 
-### Registry Management
+### Registry 管理
 
-| Command | Description |
-|---------|-------------|
-| `skillsync init` | Create a new local registry |
-| `skillsync init --from <url>` | Clone an existing registry from remote |
-| `skillsync add <path>` | Add a local skill directory to the registry |
-| `skillsync add --plugin <name>@<marketplace>` | Register a plugin |
-| `skillsync add --mcp <name> --command <cmd> [--args ...]` | Register an MCP server |
-| `skillsync remove <name>` | Remove a resource from the registry |
-| `skillsync update <name>` | Bump a resource's version |
-| `skillsync list [--type skill\|plugin\|mcp]` | List all registered resources |
-| `skillsync search <query>` | Search resources by name, description, or tags |
-| `skillsync info <name>` | Show detailed info for a resource |
+| 命令 | 说明 |
+|------|------|
+| `skillsync init` | 创建新的本地 registry |
+| `skillsync init --from <url>` | 从远程克隆已有 registry |
+| `skillsync add <path>` | 添加本地 skill 目录到 registry |
+| `skillsync add --plugin <name>@<marketplace>` | 注册插件 |
+| `skillsync add --mcp <name> --command <cmd> [--args ...]` | 注册 MCP server |
+| `skillsync remove <name>` | 从 registry 移除资源 |
+| `skillsync update <name>` | 更新资源版本 |
+| `skillsync list [--type skill\|plugin\|mcp]` | 列出所有已注册资源 |
+| `skillsync search <query>` | 按名称、描述、标签搜索资源 |
+| `skillsync info <name>` | 显示资源详细信息 |
 
-### Project Configuration
+### 项目配置
 
-| Command | Description |
-|---------|-------------|
-| `skillsync use` | Interactive TUI to configure the current project |
-| `skillsync install` | Install resources declared in `.claude/skillsync.yaml` |
-| `skillsync install --global` | Install all global-scope resources to `~/.claude/` |
+| 命令 | 说明 |
+|------|------|
+| `skillsync use` | 交互式 TUI 配置当前项目 |
+| `skillsync install` | 安装 `.claude/skillsync.yaml` 中声明的资源 |
+| `skillsync install --global` | 安装所有全局作用域资源到 `~/.claude/` |
 
-`skillsync use` provides three configuration methods:
+`skillsync use` 提供三种配置方式：
 
-- **From profile** -- select a predefined profile, then fine-tune individual resources
-- **Manual selection** -- pick resources from the full registry with multi-select
-- **Copy from project** -- use another project's configuration as a starting point
+- **从 Profile 选择** — 选择预定义的配置模板，然后微调具体资源
+- **手动选择** — 从 registry 全量资源中多选
+- **从项目复制** — 以其他项目的配置为起点调整
 
-### Synchronization
+### 同步
 
-| Command | Description |
-|---------|-------------|
-| `skillsync pull` | Fetch and merge remote registry changes |
-| `skillsync push` | Commit and push local changes to remote |
-| `skillsync sync` | Bidirectional sync (pull then push) |
-| `skillsync resolve` | Interactively resolve merge conflicts |
+| 命令 | 说明 |
+|------|------|
+| `skillsync pull` | 拉取远程 registry 变更 |
+| `skillsync push` | 提交并推送本地变更到远程 |
+| `skillsync sync` | 双向同步（先 pull 后 push） |
+| `skillsync resolve` | 交互式解决合并冲突 |
 
 ```bash
-# Quiet pull (for hooks/automation)
+# 静默拉取（用于 hook/自动化）
 skillsync pull --quiet --timeout 5
 
-# Auto-commit push (for watcher daemon)
+# 自动提交推送（用于文件监控守护进程）
 skillsync push --auto
 ```
 
-### Profiles
+### Profile 管理
 
-| Command | Description |
-|---------|-------------|
-| `skillsync profile list` | List all profiles with resource counts |
-| `skillsync profile create <name>` | Create a new profile |
-| `skillsync profile apply <name>` | Apply a profile to the current project |
-| `skillsync profile export <name>` | Export current project config as a profile |
+| 命令 | 说明 |
+|------|------|
+| `skillsync profile list` | 列出所有 profile 及资源数量 |
+| `skillsync profile create <name>` | 创建新 profile |
+| `skillsync profile apply <name>` | 将 profile 应用到当前项目 |
+| `skillsync profile export <name>` | 将当前项目配置导出为 profile |
 
-### Auto-Sync
+### 自动同步
 
-| Command | Description |
-|---------|-------------|
-| `skillsync watch` | Start file watcher in foreground |
-| `skillsync watch --daemon` | Start watcher in background |
-| `skillsync watch --install` | Install as system service (launchd/systemd) |
-| `skillsync watch --uninstall` | Remove system service |
-| `skillsync hook install` | Add SessionStart hook to Claude Code |
-| `skillsync hook remove` | Remove the SessionStart hook |
+| 命令 | 说明 |
+|------|------|
+| `skillsync watch` | 前台启动文件监控 |
+| `skillsync watch --daemon` | 后台启动文件监控 |
+| `skillsync watch --install` | 安装为系统服务（macOS launchd / Linux systemd） |
+| `skillsync watch --uninstall` | 卸载系统服务 |
+| `skillsync hook install` | 注入 Claude Code SessionStart hook |
+| `skillsync hook remove` | 移除 SessionStart hook |
 
-### Diagnostics
+### 环境诊断
 
 ```bash
 skillsync doctor
 ```
 
-Checks registry health, manifest validity, git remote, Claude Code installation, and resource consistency.
+检查 registry 状态、manifest 有效性、git remote、Claude Code 安装、资源一致性，并给出修复建议。
 
-## Configuration Files
+## 配置文件
 
-| File | Location | Purpose |
-|------|----------|---------|
-| `manifest.yaml` | `~/.skillsync/registry/` | Registry manifest -- all resources and profiles |
-| `skillsync.yaml` | `<project>/.claude/` | Per-project resource declarations (commit to git) |
-| `skillsync.lock` | `<project>/.claude/` | Installed versions and hashes (add to .gitignore) |
-| `state.db` | `~/.skillsync/` | SQLite database tracking installations |
+| 文件 | 位置 | 用途 |
+|------|------|------|
+| `manifest.yaml` | `~/.skillsync/registry/` | Registry 清单 — 所有资源和 profile |
+| `skillsync.yaml` | `<project>/.claude/` | 项目资源声明（应提交到 git） |
+| `skillsync.lock` | `<project>/.claude/` | 已安装的版本和哈希（加入 .gitignore） |
+| `state.db` | `~/.skillsync/` | SQLite 数据库，跟踪安装状态 |
 
-### skillsync.yaml example
+### skillsync.yaml 示例
 
 ```yaml
 profile: agent-dev
@@ -153,7 +157,7 @@ mcp:
   - openspec
 ```
 
-### manifest.yaml example
+### manifest.yaml 示例
 
 ```yaml
 version: 1
@@ -163,7 +167,7 @@ skills:
     scope: shared
     version: "1.0.0"
     path: resources/skills/openspec-expert
-    description: OpenSpec workflow expertise
+    description: OpenSpec 工作流专家
     tags:
       - openspec
       - workflow
@@ -183,78 +187,78 @@ profiles:
     path: profiles/agent-dev.yaml
 ```
 
-## Directory Structure
+## 目录结构
 
 ```
 ~/.skillsync/
-  registry/                    # Git-backed registry (local clone)
-    manifest.yaml              # Resource manifest
+  registry/                    # Git 仓库（本地克隆）
+    manifest.yaml              # 资源清单
     resources/
-      skills/                  # Skill source files
-      plugins/                 # Plugin backups
-      mcp/                     # MCP server configs
-    profiles/                  # Profile YAML files
-  state.db                     # SQLite state database
+      skills/                  # Skill 源文件
+      plugins/                 # 插件备份
+      mcp/                     # MCP server 配置
+    profiles/                  # Profile YAML 文件
+  state.db                     # SQLite 状态数据库
 
 ~/.claude/
-  skills/                      # Global skills (managed by skillsync)
-  settings.json                # Claude Code settings (hooks, plugins)
-  .mcp.json                    # Global MCP server config
+  skills/                      # 全局 skills（由 skillsync 管理）
+  settings.json                # Claude Code 设置（hooks、插件）
+  .mcp.json                    # 全局 MCP server 配置
 
 <project>/
   .claude/
-    skills/                    # Project skills (installed by skillsync)
-    skillsync.yaml             # Project resource declarations
-    skillsync.lock             # Installed versions (gitignored)
-  .mcp.json                   # Project MCP config
+    skills/                    # 项目 skills（由 skillsync 安装）
+    skillsync.yaml             # 项目资源声明
+    skillsync.lock             # 已安装版本（gitignore）
+  .mcp.json                   # 项目 MCP 配置
 ```
 
-## Auto-Sync Architecture
+## 自动同步架构
 
-SkillSync provides three layers of synchronization:
+SkillSync 提供三层同步机制：
 
 ```
-Layer 1: Claude Code Hook (SessionStart)
-  skillsync pull --quiet --timeout 5
-  Every time Claude Code starts, it pulls remote updates.
+第一层：Claude Code Hook（SessionStart）
+  → skillsync pull --quiet --timeout 5
+  → 每次启动 Claude Code 自动拉取远程更新
 
-Layer 2: File Watcher Daemon (optional)
-  Monitors ~/.claude/skills/ for changes.
-  Auto-commits and pushes to registry on file changes.
-  Debounced at 2 seconds.
+第二层：文件监控守护进程（可选）
+  → 监控 ~/.claude/skills/ 的文件变更
+  → 变更后自动 commit + push 到 registry
+  → 2 秒防抖，避免频繁触发
 
-Layer 3: Manual sync (fallback)
-  skillsync sync
+第三层：手动同步（兜底）
+  → skillsync sync
 ```
 
-Setup:
+设置方法：
 
 ```bash
-# Install the SessionStart hook
+# 安装 SessionStart hook
 skillsync hook install
 
-# Optionally install the file watcher as a system service
+# 可选：安装文件监控为系统服务
 skillsync watch --install
 ```
 
-## Global Flags
+## 全局参数
 
-| Flag | Description |
-|------|-------------|
-| `-q, --quiet` | Suppress output |
-| `-v, --verbose` | Verbose output |
-| `--dry-run` | Preview changes without applying |
+| 参数 | 说明 |
+|------|------|
+| `-q, --quiet` | 静默输出 |
+| `-v, --verbose` | 详细输出 |
+| `--dry-run` | 预览变更但不执行 |
 
-## Building from Source
+## 从源码构建
 
 ```bash
-cargo build --release       # Build optimized binary
-cargo test                  # Run all 125 tests
-cargo clippy                # Lint
-cargo fmt                   # Format
+cargo build --release       # 构建优化版本
+cargo test                  # 运行全部 125 个测试
+cargo clippy                # 代码检查
+cargo fmt                   # 格式化
 ```
 
-Requirements: Rust toolchain, cmake or pkg-config (for libgit2).
+依赖：Rust 工具链、cmake 或 pkg-config（用于编译 libgit2）。
 
 ## License
 

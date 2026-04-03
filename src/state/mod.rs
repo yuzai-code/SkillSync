@@ -1,2 +1,3 @@
 pub mod db;
+#[allow(unused_imports)]
 pub use db::{InstalledResource, StateDb, SyncRecord};

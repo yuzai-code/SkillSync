@@ -12,6 +12,7 @@ use walkdir::WalkDir;
 // ---------------------------------------------------------------------------
 
 /// The three kinds of syncable resources that SkillSync manages.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ResourceType {
     Skill,

@@ -40,6 +40,7 @@ pub fn save_settings(path: &Path, settings: &Value) -> Result<()> {
 
 /// Add a plugin to the `enabledPlugins` list in settings.
 /// Creates the key if it doesn't exist. Skips duplicates.
+#[allow(dead_code)]
 pub fn enable_plugin(settings: &mut Value, plugin_name: &str) {
     let obj = settings
         .as_object_mut()
@@ -63,6 +64,7 @@ pub fn enable_plugin(settings: &mut Value, plugin_name: &str) {
 
 /// Add a marketplace URL to the `extraKnownMarketplaces` list in settings.
 /// Creates the key if it doesn't exist. Skips duplicates.
+#[allow(dead_code)]
 pub fn add_marketplace(settings: &mut Value, marketplace_url: &str) {
     let obj = settings
         .as_object_mut()

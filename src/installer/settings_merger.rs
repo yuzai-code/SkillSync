@@ -84,6 +84,7 @@ pub fn write_lock_file(installed: &[LockEntry], path: &Path) -> Result<()> {
 /// Read an existing lock file from disk.
 ///
 /// Returns `None` if the file does not exist.
+#[allow(dead_code)]
 pub fn read_lock_file(path: &Path) -> Result<Option<LockFile>> {
     if !path.exists() {
         return Ok(None);

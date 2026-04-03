@@ -12,6 +12,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 // ---------------------------------------------------------------------------
 
 /// A row from the `installed_resources` table.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct InstalledResource {
     pub id: i64,
@@ -27,6 +28,7 @@ pub struct InstalledResource {
 }
 
 /// A row from the `sync_history` table.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SyncRecord {
     pub id: i64,
@@ -42,10 +44,12 @@ pub struct SyncRecord {
 
 /// Wraps a `rusqlite::Connection` and provides typed helpers for the
 /// SkillSync state database (installed resources + sync history).
+#[allow(dead_code)]
 pub struct StateDb {
     conn: Connection,
 }
 
+#[allow(dead_code)]
 impl StateDb {
     /// Open (or create) the SQLite database at `path` and run migrations.
     pub fn open(path: &Path) -> Result<Self> {
@@ -335,6 +339,7 @@ impl StateDb {
 // ---------------------------------------------------------------------------
 
 /// Map a `rusqlite::Row` to an `InstalledResource`.
+#[allow(dead_code)]
 fn row_to_installed_resource(row: &rusqlite::Row<'_>) -> rusqlite::Result<InstalledResource> {
     Ok(InstalledResource {
         id: row.get(0)?,

@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use crate::claude::settings;
 
 /// Result of enabling/installing a single plugin.
+#[allow(dead_code)]
 #[derive(Debug)]
 pub enum PluginResult {
     /// Plugin was newly added to `enabledPlugins`.
@@ -28,6 +29,7 @@ pub enum PluginResult {
 /// 2. Add the full identifier to `enabledPlugins`.
 /// 3. Save settings.
 /// 4. Best-effort attempt `claude plugins install <name>`.
+#[allow(dead_code)]
 pub fn enable_plugins(
     plugin_names: &[String],
     settings_path: &Path,
@@ -199,7 +201,7 @@ mod tests {
         let settings_path = dir.path().join("settings.json");
 
         // Pre-populate settings.
-        let mut settings = serde_json::json!({
+        let settings = serde_json::json!({
             "enabledPlugins": ["existing-plugin"]
         });
         settings::save_settings(&settings_path, &settings).unwrap();

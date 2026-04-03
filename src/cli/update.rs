@@ -125,6 +125,7 @@ pub fn run_inner(name: &str, new_path: Option<&str>) -> Result<()> {
 }
 
 /// Update a resource using explicit registry/manifest paths (for testing).
+#[allow(dead_code)]
 pub fn update_in_manifest(
     name: &str,
     manifest: &mut Manifest,

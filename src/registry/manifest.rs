@@ -385,7 +385,7 @@ mod tests {
             },
         );
 
-        let mut tmp = NamedTempFile::new().unwrap();
+        let tmp = NamedTempFile::new().unwrap();
         let path = tmp.path().to_path_buf();
         m.save(&path).unwrap();
 

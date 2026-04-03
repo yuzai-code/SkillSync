@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 /// Paths related to Claude Code's global configuration.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ClaudePaths {
     /// `~/.claude/`
@@ -50,6 +51,7 @@ impl ClaudePaths {
 }
 
 /// Paths related to Claude Code within a specific project.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ProjectPaths {
     /// Project root directory.
@@ -96,6 +98,7 @@ impl ProjectPaths {
 }
 
 /// Paths for SkillSync's own data (`~/.skillsync/`).
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct SkillSyncPaths {
     /// `~/.skillsync/`
@@ -118,6 +121,7 @@ pub struct SkillSyncPaths {
     pub state_db: PathBuf,
 }
 
+#[allow(dead_code)]
 impl SkillSyncPaths {
     /// Discover SkillSync paths based on the user's home directory.
     pub fn resolve() -> Result<Self> {

@@ -135,6 +135,7 @@ pub fn run(from: Option<String>, quiet: bool) -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// A discovered resource from the user's existing Claude Code installation.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct DiscoveredResource {
     /// Resource name (directory name or MCP server name).
@@ -146,6 +147,7 @@ pub struct DiscoveredResource {
 }
 
 /// What kind of resource was discovered.
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DiscoveredKind {
     Skill,
@@ -165,6 +167,7 @@ impl std::fmt::Display for DiscoveredKind {
 ///
 /// Returns a list of discovered skills (each subdirectory of `~/.claude/skills/`
 /// is treated as one skill).
+#[allow(dead_code)]
 pub fn scan_existing_skills() -> Result<Vec<DiscoveredResource>> {
     let claude = ClaudePaths::global()?;
     let mut results = Vec::new();
@@ -197,6 +200,7 @@ pub fn scan_existing_skills() -> Result<Vec<DiscoveredResource>> {
 /// Scan the user's `~/.claude/.mcp.json` for existing MCP server definitions.
 ///
 /// Returns a list of discovered MCP servers (each key in `mcpServers`).
+#[allow(dead_code)]
 pub fn scan_existing_mcp_servers() -> Result<Vec<DiscoveredResource>> {
     let claude = ClaudePaths::global()?;
     let mut results = Vec::new();
@@ -233,6 +237,7 @@ pub fn scan_existing_mcp_servers() -> Result<Vec<DiscoveredResource>> {
 ///
 /// This is the main entry point for task 3.3. Call this from `init` (or
 /// anywhere else) to discover what the user already has installed.
+#[allow(dead_code)]
 pub fn discover_existing_resources() -> Result<Vec<DiscoveredResource>> {
     let mut all = Vec::new();
 
@@ -260,6 +265,7 @@ pub fn discover_existing_resources() -> Result<Vec<DiscoveredResource>> {
 /// Print a summary of discovered resources (non-interactive reporting).
 ///
 /// Returns the list so callers can decide what to do with it.
+#[allow(dead_code)]
 pub fn report_discovered_resources() -> Result<Vec<DiscoveredResource>> {
     let resources = discover_existing_resources()?;
 

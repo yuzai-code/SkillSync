@@ -1,11 +1,14 @@
 use anyhow::{bail, Context, Result};
 use console::style;
 
+#[allow(unused_imports)]
+use crate::t;
+use crate::i18n::Msg;
 use crate::registry::{Manifest, ProfileConfig};
 
 /// Resolve the registry root: `~/.skillsync/registry/`
 fn registry_root() -> Result<std::path::PathBuf> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let home = dirs::home_dir().context(t!(Msg::ContextHomeDir))?;
     Ok(home.join(".skillsync").join("registry"))
 }
 
@@ -41,7 +44,7 @@ pub fn run(name: &str) -> Result<()> {
     let registry = registry_root()?;
     let manifest_file = registry.join("manifest.yaml");
     let mut manifest = Manifest::load(&manifest_file)
-        .context("Failed to load manifest. Have you run 'skillsync init'?")?;
+        .context(t!(Msg::ContextFailedToLoadManifest))?;
 
     // Determine which type of resource this is.
     let is_skill = manifest.skills.contains_key(name);
@@ -49,25 +52,18 @@ pub fn run(name: &str) -> Result<()> {
     let is_mcp = manifest.mcp_servers.contains_key(name);
 
     if !is_skill && !is_plugin && !is_mcp {
-        bail!(
-            "Resource '{}' not found in the registry.\n\
-             Use 'skillsync list' to see all registered resources.",
-            name
-        );
+        bail!("{}", t!(Msg::RemoveResourceNotFound { name: name.to_string() }));
     }
 
     // Check for profile references and warn.
     let refs = find_profile_references(&manifest, name);
     if !refs.is_empty() {
         eprintln!(
-            "{} Resource '{}' is referenced by profile(s): {}",
+            "{} {}",
             style("warning:").yellow().bold(),
-            name,
-            refs.join(", ")
+            t!(Msg::RemoveReferencedByProfiles { name: name.to_string(), profiles: refs.join(", ") })
         );
-        eprintln!(
-            "         You may need to update these profiles after removal."
-        );
+        eprintln!("{}", t!(Msg::RemoveUpdateProfilesHint));
     }
 
     // Remove the resource from the manifest.
@@ -80,10 +76,7 @@ pub fn run(name: &str) -> Result<()> {
         let skill_dir = registry.join(&entry.path);
         if skill_dir.exists() {
             std::fs::remove_dir_all(&skill_dir).with_context(|| {
-                format!(
-                    "Failed to delete skill directory: {}",
-                    skill_dir.display()
-                )
+                t!(Msg::ContextCreateDir { path: skill_dir.display().to_string() })
             })?;
         }
     } else if is_plugin {
@@ -94,13 +87,12 @@ pub fn run(name: &str) -> Result<()> {
         resource_type = "MCP server";
     }
 
-    manifest.save(&manifest_file).context("Failed to save manifest")?;
+    manifest.save(&manifest_file).context(t!(Msg::ContextFailedToSaveManifest))?;
 
     println!(
-        "{} Removed {} '{}' from registry",
+        "{} {}",
         style("✓").green().bold(),
-        resource_type,
-        style(name).cyan()
+        t!(Msg::RemoveSuccess { kind: resource_type.to_string(), name: name.to_string() })
     );
 
     Ok(())

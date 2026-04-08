@@ -1,5 +1,6 @@
 mod cli;
 mod claude;
+pub mod i18n;
 mod installer;
 mod registry;
 mod state;

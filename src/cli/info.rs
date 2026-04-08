@@ -1,11 +1,14 @@
 use anyhow::{Context, Result};
 use console::style;
 
+use crate::i18n::Msg;
+#[allow(unused_imports)]
+use crate::t;
 use crate::registry::{Manifest, ProfileConfig};
 
 /// Resolve the registry root: `~/.skillsync/registry/`
 fn registry_root() -> Result<std::path::PathBuf> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let home = dirs::home_dir().with_context(|| t!(Msg::ContextHomeDir))?;
     Ok(home.join(".skillsync").join("registry"))
 }
 
@@ -39,75 +42,75 @@ pub fn run(name: &str) -> Result<()> {
     let registry = registry_root()?;
     let manifest_file = registry.join("manifest.yaml");
     let manifest = Manifest::load(&manifest_file)
-        .context("Failed to load manifest. Have you run 'skillsync init'?")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     // Look up profiles that reference this resource.
     let profile_refs = find_profile_references(&manifest, name);
 
     // Check skills.
     if let Some(entry) = manifest.skills.get(name) {
-        println!("{}", style(format!("Skill: {}", name)).bold().cyan());
-        println!("  Type:        {:?}", entry.skill_type);
-        println!("  Scope:       {:?}", entry.scope);
-        println!("  Version:     {}", entry.version);
-        println!("  Path:        {}", entry.path);
+        println!("{}", style(t!(Msg::InfoSkillLabel { name: name.to_string() })).bold().cyan());
+        println!("  {}  {:?}", t!(Msg::InfoType), entry.skill_type);
+        println!("  {}  {:?}", t!(Msg::InfoScope), entry.scope);
+        println!("  {}  {}", t!(Msg::InfoVersion), entry.version);
+        println!("  {}  {}", t!(Msg::InfoPath), entry.path);
         if let Some(ref desc) = entry.description {
-            println!("  Description: {}", desc);
+            println!("  {}  {}", t!(Msg::InfoDescription), desc);
         }
         if !entry.tags.is_empty() {
-            println!("  Tags:        {}", entry.tags.join(", "));
+            println!("  {}  {}", t!(Msg::InfoTags), entry.tags.join(", "));
         }
         if let Some(ref source) = entry.source {
-            println!("  Source:");
-            println!("    Marketplace: {}", source.marketplace);
-            println!("    Plugin:      {}", source.plugin);
-            println!("    Skill:       {}", source.skill);
+            println!("  {}", t!(Msg::InfoSource));
+            println!("    {}  {}", t!(Msg::InfoMarketplace), source.marketplace);
+            println!("    {}  {}", t!(Msg::InfoPlugin), source.plugin);
+            println!("    {}  {}", t!(Msg::InfoSkill), source.skill);
         }
         if let Some(ref hash) = entry.backup_hash {
-            println!("  Hash:        {}", hash);
+            println!("  {}  {}", t!(Msg::InfoHash), hash);
         }
         if !profile_refs.is_empty() {
-            println!("  Profiles:    {}", profile_refs.join(", "));
+            println!("  {}  {}", t!(Msg::InfoProfiles), profile_refs.join(", "));
         }
         return Ok(());
     }
 
     // Check plugins.
     if let Some(entry) = manifest.plugins.get(name) {
-        println!("{}", style(format!("Plugin: {}", name)).bold().cyan());
-        println!("  Marketplace: {}", entry.marketplace);
-        println!("  Version:     {}", entry.version);
+        println!("{}", style(t!(Msg::InfoPluginLabel { name: name.to_string() })).bold().cyan());
+        println!("  {}  {}", t!(Msg::InfoPluginMarketplace), entry.marketplace);
+        println!("  {}  {}", t!(Msg::InfoVersion), entry.version);
         if let Some(ref sha) = entry.git_sha {
-            println!("  Git SHA:     {}", sha);
+            println!("  {}  {}", t!(Msg::InfoGitSha), sha);
         }
         if let Some(ref repo) = entry.repo {
-            println!("  Repo:        {}", repo);
+            println!("  {}  {}", t!(Msg::InfoRepo), repo);
         }
         if !profile_refs.is_empty() {
-            println!("  Profiles:    {}", profile_refs.join(", "));
+            println!("  {}  {}", t!(Msg::InfoProfiles), profile_refs.join(", "));
         }
         return Ok(());
     }
 
     // Check MCP servers.
     if let Some(entry) = manifest.mcp_servers.get(name) {
-        println!("{}", style(format!("MCP Server: {}", name)).bold().cyan());
-        println!("  Command:     {}", entry.command);
+        println!("{}", style(t!(Msg::InfoMcpLabel { name: name.to_string() })).bold().cyan());
+        println!("  {}  {}", t!(Msg::InfoCommand), entry.command);
         if !entry.args.is_empty() {
-            println!("  Args:        {}", entry.args.join(" "));
+            println!("  {}  {}", t!(Msg::InfoArgs), entry.args.join(" "));
         }
-        println!("  Scope:       {:?}", entry.scope);
+        println!("  {}  {:?}", t!(Msg::InfoScope), entry.scope);
         if !profile_refs.is_empty() {
-            println!("  Profiles:    {}", profile_refs.join(", "));
+            println!("  {}  {}", t!(Msg::InfoProfiles), profile_refs.join(", "));
         }
         return Ok(());
     }
 
     // Not found — suggest similar names.
     eprintln!(
-        "{} Resource '{}' not found in the registry.",
+        "{} {}",
         style("error:").red().bold(),
-        name
+        t!(Msg::InfoNotFound { name: name.to_string() })
     );
 
     // Collect all known names for suggestions.
@@ -129,14 +132,14 @@ pub fn run(name: &str) -> Result<()> {
             .collect();
 
         if !suggestions.is_empty() {
-            eprintln!("  Did you mean one of these?");
+            eprintln!("{}", t!(Msg::InfoDidYouMean));
             for s in suggestions {
-                eprintln!("    - {}", style(s).cyan());
+                eprintln!("{}", t!(Msg::InfoSuggestion { name: s.to_string() }));
             }
         } else {
             eprintln!(
-                "  Use '{}' to see all registered resources.",
-                style("skillsync list").cyan()
+                "{}",
+                t!(Msg::InfoUseListHint { cmd: "skillsync list".to_string() })
             );
         }
     }

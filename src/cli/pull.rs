@@ -1,18 +1,17 @@
 use anyhow::{bail, Context, Result};
 use console::style;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::claude::paths::SkillSyncPaths;
+use crate::i18n::Msg;
 use crate::registry::git_ops;
 
 pub fn run(timeout: Option<u64>, quiet: bool) -> Result<()> {
     let paths = SkillSyncPaths::resolve().context("Failed to resolve SkillSync paths")?;
 
     if !paths.registry_exists() {
-        bail!(
-            "Registry not found at {}.\n\
-             Run `skillsync init` or `skillsync init --from <url>` first.",
-            paths.registry.display()
-        );
+        bail!("{}", t!(Msg::PullRegistryNotFound { path: paths.registry.display().to_string() }));
     }
 
     let repo = git_ops::open_repo(&paths.registry)
@@ -20,16 +19,14 @@ pub fn run(timeout: Option<u64>, quiet: bool) -> Result<()> {
 
     // Check that an origin remote exists before attempting to fetch.
     if repo.find_remote("origin").is_err() {
-        bail!(
-            "No remote named 'origin' in the registry repository.\n\
-             If this is a local-only registry, there is nothing to pull."
-        );
+        bail!("{}", t!(Msg::PullNoOrigin));
     }
 
     if !quiet {
         println!(
-            "{} Fetching from origin...",
-            style("↓").cyan().bold()
+            "{} {}",
+            style("↓").cyan().bold(),
+            t!(Msg::PullFetching)
         );
     }
 
@@ -48,10 +45,7 @@ pub fn run(timeout: Option<u64>, quiet: bool) -> Result<()> {
                 return report_merge(merge, quiet);
             }
             Err(_) => {
-                bail!(
-                    "Pull timed out after {} seconds. Check your network connection or increase the timeout with --timeout.",
-                    secs
-                );
+                bail!("{}", t!(Msg::PullTimedOut { secs }));
             }
         }
     }
@@ -66,38 +60,39 @@ pub fn run(timeout: Option<u64>, quiet: bool) -> Result<()> {
 fn report_merge(merge: git_ops::MergeResult, quiet: bool) -> Result<()> {
     if !merge.conflicts.is_empty() {
         eprintln!(
-            "{} Merge conflicts detected in {} file(s):",
+            "{} {}",
             style("✗").red().bold(),
-            merge.conflicts.len()
+            t!(Msg::PullMergeConflicts { count: merge.conflicts.len() })
         );
         for path in &merge.conflicts {
-            eprintln!("  - {}", style(path).yellow());
+            eprintln!("{}", t!(Msg::PullConflictFile { file: path.clone() }));
         }
-        eprintln!(
-            "\nResolve conflicts manually, then run `skillsync resolve`."
-        );
-        bail!("Pull completed with conflicts");
+        eprintln!("{}", t!(Msg::PullResolveHint));
+        bail!("{}", t!(Msg::PullConflicts));
     }
 
     if merge.up_to_date {
         if !quiet {
             println!(
-                "{} Already up to date.",
-                style("✓").green().bold()
+                "{} {}",
+                style("✓").green().bold(),
+                t!(Msg::PullUpToDate)
             );
         }
     } else if merge.fast_forward {
         if !quiet {
             println!(
-                "{} Fast-forwarded to latest changes.",
-                style("✓").green().bold()
+                "{} {}",
+                style("✓").green().bold(),
+                t!(Msg::PullFastForwarded)
             );
         }
     } else {
         if !quiet {
             println!(
-                "{} Merged remote changes successfully.",
-                style("✓").green().bold()
+                "{} {}",
+                style("✓").green().bold(),
+                t!(Msg::PullMerged)
             );
         }
     }

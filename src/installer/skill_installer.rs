@@ -6,6 +6,9 @@ use std::path::Path;
 
 use anyhow::{bail, Context, Result};
 
+#[allow(unused_imports)]
+use crate::t;
+use crate::i18n::Msg;
 use crate::registry::{compute_hash, copy_resource, Manifest, ResourceScope};
 
 /// Outcome of a single skill installation attempt.
@@ -33,9 +36,9 @@ impl InstallResult {
 impl fmt::Display for InstallResult {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            InstallResult::Installed(n) => write!(f, "installed {}", n),
-            InstallResult::Updated(n) => write!(f, "updated {}", n),
-            InstallResult::Skipped(n) => write!(f, "skipped {} (up-to-date)", n),
+            InstallResult::Installed(n) => write!(f, "{}", t!(Msg::InstallerInstalled { name: n.clone() })),
+            InstallResult::Updated(n) => write!(f, "{}", t!(Msg::InstallerUpdated { name: n.clone() })),
+            InstallResult::Skipped(n) => write!(f, "{}", t!(Msg::InstallerSkipped { name: n.clone() })),
         }
     }
 }
@@ -51,11 +54,7 @@ pub fn install_skill(
     skill_name: &str,
 ) -> Result<InstallResult> {
     if !registry_skill_path.exists() {
-        bail!(
-            "Registry skill path does not exist: {}\n\
-             The skill may have been removed from the registry. Run 'skillsync doctor' to check.",
-            registry_skill_path.display()
-        );
+        bail!("{}", t!(Msg::InstallerSkillPathNotExist { path: registry_skill_path.display().to_string() }));
     }
 
     // Ensure the target skills directory exists.
@@ -79,22 +78,20 @@ pub fn install_skill(
 
         // Hashes differ — update.
         copy_resource(registry_skill_path, &dest).with_context(|| {
-            format!(
-                "Failed to update skill '{}' at {}",
-                skill_name,
-                dest.display()
-            )
+            t!(Msg::InstallerUpdateFailed {
+                name: skill_name.to_string(),
+                path: dest.display().to_string()
+            })
         })?;
         return Ok(InstallResult::Updated(skill_name.to_string()));
     }
 
     // Destination does not exist — fresh install.
     copy_resource(registry_skill_path, &dest).with_context(|| {
-        format!(
-            "Failed to install skill '{}' to {}",
-            skill_name,
-            dest.display()
-        )
+        t!(Msg::InstallerInstallFailed {
+            name: skill_name.to_string(),
+            path: dest.display().to_string()
+        })
     })?;
     Ok(InstallResult::Installed(skill_name.to_string()))
 }
@@ -137,7 +134,7 @@ pub fn install_project_skills(
         let entry = manifest
             .skills
             .get(name)
-            .with_context(|| format!("Skill '{}' not found in registry manifest", name))?;
+            .with_context(|| t!(Msg::InstallerNotInManifest { name: name.clone() }))?;
 
         let source = registry_root.join(&entry.path);
         let result = install_skill(&source, project_skills_dir, name)
@@ -220,7 +217,8 @@ mod tests {
     #[test]
     fn test_install_result_display() {
         let r = InstallResult::Installed("foo".into());
-        assert_eq!(r.to_string(), "installed foo");
+        // Display output is language-dependent; just verify it contains the name
+        assert!(r.to_string().contains("foo"));
         assert_eq!(r.name(), "foo");
     }
 }

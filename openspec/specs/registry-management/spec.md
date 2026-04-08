@@ -68,6 +68,28 @@ The system SHALL display detailed info for a specific resource via `skillsync in
 - **WHEN** user runs `skillsync info <skill-name>`
 - **THEN** system displays the skill's metadata, source path, content hash, which projects use it, and its profile memberships
 
+### Requirement: CLI output i18n
+All user-visible output messages from CLI commands SHALL be provided via the i18n module, supporting both Chinese and English switching.
+
+#### Scenario: Init command Chinese output
+- **WHEN** language is set to `zh` and `skillsync init` succeeds
+- **THEN** SHALL output "已初始化 SkillSync registry 至 {path}"
+
+#### Scenario: Add command Chinese output
+- **WHEN** language is set to `zh` and `skillsync add` successfully adds a skill
+- **THEN** SHALL output "已添加 skill '{name}' 到 registry"
+
+#### Scenario: Error messages Chinese output
+- **WHEN** language is set to `zh` and a command is run when registry is not initialized
+- **THEN** SHALL output "Registry 未找到。请先运行 'skillsync init'。"
+
+### Requirement: Doctor output i18n
+`skillsync doctor` check results SHALL be displayed via the i18n module.
+
+#### Scenario: Doctor Chinese output
+- **WHEN** language is set to `zh` and `skillsync doctor` is run
+- **THEN** check item titles and results SHALL display in Chinese (e.g., "已找到 registry", "manifest.yaml 格式正确")
+
 ### Requirement: Manifest schema validation
 The system SHALL validate manifest.yaml against a defined schema on every read/write operation.
 

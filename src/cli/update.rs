@@ -3,13 +3,15 @@ use std::path::Path;
 use anyhow::{bail, Context, Result};
 use console::style;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::registry::{compute_hash, copy_resource, Manifest};
+use crate::i18n::Msg;
 
 /// Resolve the registry root: `~/.skillsync/registry/`
 fn registry_root() -> Result<std::path::PathBuf> {
-    let home = dirs::home_dir().context(
-        "Could not determine home directory. Ensure the HOME environment variable is set.",
-    )?;
+    let home = dirs::home_dir()
+        .with_context(|| t!(Msg::ContextHomeDir))?;
     Ok(home.join(".skillsync").join("registry"))
 }
 
@@ -42,9 +44,8 @@ pub fn run(name: &str) -> Result<()> {
 pub fn run_inner(name: &str, new_path: Option<&str>) -> Result<()> {
     let registry = registry_root()?;
     let manifest_file = registry.join("manifest.yaml");
-    let mut manifest = Manifest::load(&manifest_file).context(
-        "Failed to load manifest. Run 'skillsync init' to create a registry first.",
-    )?;
+    let mut manifest = Manifest::load(&manifest_file)
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     // --- Skill ---
     if let Some(entry) = manifest.skills.get_mut(name) {
@@ -52,8 +53,8 @@ pub fn run_inner(name: &str, new_path: Option<&str>) -> Result<()> {
             let source = Path::new(src);
             if !source.exists() {
                 bail!(
-                    "Source path '{}' does not exist. Provide a valid path to the updated skill.",
-                    src
+                    "{}",
+                    t!(Msg::UpdateSourceNotExist { path: src.to_string() })
                 );
             }
 
@@ -72,14 +73,12 @@ pub fn run_inner(name: &str, new_path: Option<&str>) -> Result<()> {
 
         manifest
             .save(&manifest_file)
-            .context("Failed to save manifest after update")?;
+            .with_context(|| t!(Msg::ContextFailedToSaveManifest))?;
 
         println!(
-            "{} Updated skill '{}': {} -> {}",
+            "{} {}",
             style("✓").green().bold(),
-            style(name).cyan(),
-            style(&old_version).dim(),
-            style(&new_version).green()
+            t!(Msg::UpdateSkillSuccess { name: name.to_string(), old_ver: old_version, new_ver: new_version })
         );
         return Ok(());
     }
@@ -92,14 +91,12 @@ pub fn run_inner(name: &str, new_path: Option<&str>) -> Result<()> {
 
         manifest
             .save(&manifest_file)
-            .context("Failed to save manifest after update")?;
+            .with_context(|| t!(Msg::ContextFailedToSaveManifest))?;
 
         println!(
-            "{} Updated plugin '{}': {} -> {}",
+            "{} {}",
             style("✓").green().bold(),
-            style(name).cyan(),
-            style(&old_version).dim(),
-            style(&new_version).green()
+            t!(Msg::UpdatePluginSuccess { name: name.to_string(), old_ver: old_version, new_ver: new_version })
         );
         return Ok(());
     }
@@ -109,18 +106,17 @@ pub fn run_inner(name: &str, new_path: Option<&str>) -> Result<()> {
         // MCP servers don't have a version field to bump.
         // Just report that it is already registered.
         println!(
-            "{} MCP server '{}' is already registered. Update its command/args via 'skillsync remove' + 'skillsync add'.",
+            "{} {}",
             style("·").dim(),
-            style(name).cyan()
+            t!(Msg::UpdateMcpAlreadyRegistered { name: name.to_string() })
         );
         return Ok(());
     }
 
     // --- Not found ---
     bail!(
-        "Resource '{}' not found in the registry.\n\
-         Use 'skillsync list' to see all registered resources.",
-        name
+        "{}",
+        t!(Msg::UpdateNotFound { name: name.to_string() })
     );
 }
 
@@ -138,8 +134,8 @@ pub fn update_in_manifest(
             let source = Path::new(src);
             if !source.exists() {
                 bail!(
-                    "Source path '{}' does not exist. Provide a valid path to the updated skill.",
-                    src
+                    "{}",
+                    t!(Msg::UpdateSourceNotExist { path: src.to_string() })
                 );
             }
 
@@ -168,9 +164,8 @@ pub fn update_in_manifest(
     }
 
     bail!(
-        "Resource '{}' not found in the registry.\n\
-         Use 'skillsync list' to see all registered resources.",
-        name
+        "{}",
+        t!(Msg::UpdateNotFound { name: name.to_string() })
     );
 }
 
@@ -307,7 +302,8 @@ mod tests {
         let mut manifest = Manifest::default_empty();
         let result = update_in_manifest("nonexistent", &mut manifest, dir.path(), None);
         assert!(result.is_err());
+        // Error message is i18n; just verify it mentions the resource name
         let msg = result.unwrap_err().to_string();
-        assert!(msg.contains("not found"));
+        assert!(msg.contains("nonexistent"));
     }
 }

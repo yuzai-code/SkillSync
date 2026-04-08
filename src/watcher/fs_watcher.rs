@@ -9,7 +9,10 @@ use anyhow::{Context, Result};
 use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::claude::paths::SkillSyncPaths;
+use crate::i18n::Msg;
 use crate::registry::git_ops;
 
 /// Start watching the given directories for file changes.
@@ -26,8 +29,7 @@ pub fn watch_directories(
     let (tx, rx) = mpsc::channel();
 
     // Create a debouncer with 2-second timeout
-    let mut debouncer = new_debouncer(Duration::from_secs(2), tx)
-        .context("Failed to create file watcher")?;
+    let mut debouncer = new_debouncer(Duration::from_secs(2), tx)?;
 
     // Watch each directory recursively
     for dir in &dirs {
@@ -35,25 +37,20 @@ pub fn watch_directories(
             debouncer
                 .watcher()
                 .watch(dir, RecursiveMode::Recursive)
-                .with_context(|| format!("Failed to watch directory: {}", dir.display()))?;
+                .with_context(|| t!(Msg::WatcherWatching { path: dir.display().to_string() }))?;
             eprintln!(
-                "  {} {}",
-                console::style("Watching:").green(),
-                dir.display()
+                "  {}",
+                t!(Msg::WatcherWatching { path: dir.display().to_string() })
             );
         } else {
             eprintln!(
-                "  {} Directory does not exist, skipping: {}",
-                console::style("Warning:").yellow(),
-                dir.display()
+                "  {}",
+                t!(Msg::WatcherDirNotExist { path: dir.display().to_string() })
             );
         }
     }
 
-    eprintln!(
-        "{}",
-        console::style("File watcher started. Press Ctrl+C to stop.").cyan()
-    );
+    eprintln!("{}", t!(Msg::WatcherStarted));
 
     // Block on the receiver, processing events as they arrive
     loop {
@@ -64,13 +61,9 @@ pub fn watch_directories(
                 }
 
                 // Log detected changes
-                eprintln!(
-                    "\n{} Detected {} file change(s)",
-                    console::style("[watcher]").bold(),
-                    events.len()
-                );
+                eprintln!("{}", t!(Msg::WatcherDetectedChanges { count: events.len() }));
                 for event in &events {
-                    eprintln!("  {} {}", console::style("->").dim(), event.path.display());
+                    eprintln!("{}", t!(Msg::WatcherEventPath { path: event.path.display().to_string() }));
                 }
 
                 // Invoke the callback, catching any panic to keep the watcher alive
@@ -79,31 +72,19 @@ pub fn watch_directories(
                 }));
 
                 if let Err(e) = result {
-                    eprintln!(
-                        "  {} on_change callback panicked: {:?}",
-                        console::style("Error:").red(),
-                        e
-                    );
-                    eprintln!("  Watcher continues running. Will retry on next change.");
+                    eprintln!("{}", t!(Msg::WatcherPanicked { error: format!("{:?}", e) }));
+                    eprintln!("{}", t!(Msg::WatcherRetry));
                 }
             }
             Ok(Err(errors)) => {
                 // Debouncer reported errors — log them and continue
-                eprintln!(
-                    "  {} Watch error: {:?}",
-                    console::style("Error:").red(),
-                    errors
-                );
-                eprintln!("  Watcher continues running. Will retry on next change.");
+                eprintln!("{}", t!(Msg::WatcherError { error: format!("{:?}", errors) }));
+                eprintln!("{}", t!(Msg::WatcherRetry));
             }
             Err(e) => {
                 // The channel was disconnected — the debouncer was dropped
-                eprintln!(
-                    "  {} Watch channel closed: {}",
-                    console::style("Fatal:").red().bold(),
-                    e
-                );
-                anyhow::bail!("File watcher channel closed unexpectedly");
+                eprintln!("{}", t!(Msg::WatcherChannelClosed { error: e.to_string() }));
+                anyhow::bail!("{}", t!(Msg::WatcherStarted));
             }
         }
     }
@@ -116,12 +97,8 @@ pub fn watch_directories(
 /// must not crash due to a failed push.
 pub fn auto_push() {
     if let Err(e) = auto_push_inner() {
-        eprintln!(
-            "  {} Auto-push failed: {:#}",
-            console::style("Error:").red(),
-            e
-        );
-        eprintln!("  Will retry on next detected change.");
+        eprintln!("{}", t!(Msg::WatcherAutoPushFailed { error: format!("{:#}", e) }));
+        eprintln!("{}", t!(Msg::WatcherWillRetry));
     }
 }
 
@@ -141,18 +118,11 @@ fn auto_push_inner() -> Result<()> {
     let (has_changes, changed_files) = git_ops::repo_status(&repo)?;
 
     if !has_changes {
-        eprintln!(
-            "  {} No changes to push.",
-            console::style("Info:").blue()
-        );
+        eprintln!("{}", t!(Msg::WatcherNoChanges));
         return Ok(());
     }
 
-    eprintln!(
-        "  {} Staging {} file(s)...",
-        console::style("[auto-push]").bold(),
-        changed_files.len()
-    );
+    eprintln!("{}", t!(Msg::WatcherStaging { count: changed_files.len() }));
 
     git_ops::stage_all(&repo)?;
 
@@ -163,27 +133,21 @@ fn auto_push_inner() -> Result<()> {
     let oid = git_ops::commit(&repo, &message)?;
 
     eprintln!(
-        "  {} Committed: {} ({})",
-        console::style("[auto-push]").bold(),
-        message,
-        &oid.to_string()[..8]
+        "  {}",
+        t!(Msg::WatcherCommitted {
+            message,
+            oid: oid.to_string()[..8].to_string()
+        })
     );
 
     // Attempt to push — this may fail if there's no remote configured
     match git_ops::push_origin(&repo) {
         Ok(()) => {
-            eprintln!(
-                "  {} Pushed to origin.",
-                console::style("[auto-push]").bold()
-            );
+            eprintln!("{}", t!(Msg::WatcherPushed));
         }
         Err(e) => {
-            eprintln!(
-                "  {} Push to origin failed: {:#}",
-                console::style("Warning:").yellow(),
-                e
-            );
-            eprintln!("  Changes are committed locally. Push will be retried on next change.");
+            eprintln!("{}", t!(Msg::WatcherPushFailed { error: format!("{:#}", e) }));
+            eprintln!("{}", t!(Msg::WatcherPushLocal));
         }
     }
 

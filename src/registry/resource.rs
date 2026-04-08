@@ -7,6 +7,10 @@ use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
+#[allow(unused_imports)]
+use crate::t;
+use crate::i18n::Msg;
+
 // ---------------------------------------------------------------------------
 // ResourceType
 // ---------------------------------------------------------------------------
@@ -23,9 +27,9 @@ pub enum ResourceType {
 impl fmt::Display for ResourceType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ResourceType::Skill => write!(f, "skill"),
-            ResourceType::Plugin => write!(f, "plugin"),
-            ResourceType::McpServer => write!(f, "mcp_server"),
+            ResourceType::Skill => write!(f, "{}", t!(Msg::ResourceTypeSkill)),
+            ResourceType::Plugin => write!(f, "{}", t!(Msg::ResourceTypePlugin)),
+            ResourceType::McpServer => write!(f, "{}", t!(Msg::ResourceTypeMcp)),
         }
     }
 }
@@ -77,10 +81,7 @@ pub fn compute_hash(path: &Path) -> Result<String> {
 /// Parent directories of `to` are created automatically.
 pub fn copy_resource(from: &Path, to: &Path) -> Result<()> {
     if !from.exists() {
-        anyhow::bail!(
-            "Source path does not exist: {}. Check the path and ensure the resource has not been deleted.",
-            from.display()
-        );
+        anyhow::bail!("{}", t!(Msg::ResourceSourceNotExist { path: from.display().to_string() }));
     }
 
     // Ensure the destination's parent directory exists.
@@ -110,21 +111,19 @@ pub fn copy_resource(from: &Path, to: &Path) -> Result<()> {
 
         fs_extra::dir::copy(from, to, &options)
             .with_context(|| {
-                format!(
-                    "Failed to copy directory from {} to {}",
-                    from.display(),
-                    to.display()
-                )
+                t!(Msg::ResourceCopyDirFailed {
+                    from: from.display().to_string(),
+                    to: to.display().to_string()
+                })
             })?;
     } else {
         // Single file — just copy it.
         std::fs::copy(from, to)
             .with_context(|| {
-                format!(
-                    "Failed to copy file from {} to {}",
-                    from.display(),
-                    to.display()
-                )
+                t!(Msg::ResourceCopyFileFailed {
+                    from: from.display().to_string(),
+                    to: to.display().to_string()
+                })
             })?;
     }
 

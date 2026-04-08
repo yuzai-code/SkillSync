@@ -4,43 +4,46 @@ use anyhow::Result;
 use console::style;
 use git2::Repository;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::claude::paths::{ClaudePaths, SkillSyncPaths};
+use crate::i18n::Msg;
 use crate::registry::manifest::Manifest;
 
 /// Print a pass/fail/warn line.
-fn check_pass(label: &str) {
+fn check_pass(label: String) {
     println!("  {} {}", style("✓").green().bold(), label);
 }
 
-fn check_fail(label: &str) {
+fn check_fail(label: String) {
     println!("  {} {}", style("✗").red().bold(), label);
 }
 
-fn check_warn(label: &str) {
+fn check_warn(label: String) {
     println!("  {} {}", style("⚠").yellow().bold(), label);
 }
 
 pub fn run() -> Result<()> {
-    println!("{}", style("SkillSync Doctor").bold().underlined());
+    println!("{}", style(t!(Msg::DoctorTitle)).bold().underlined());
     println!();
 
     let ss_paths = SkillSyncPaths::resolve()?;
     let claude_paths = ClaudePaths::global()?;
 
-    let mut issues = 0u32;
-    let mut warnings = 0u32;
+    let mut issues = 0;
+    let mut warnings = 0;
 
     // 1. Registry exists?
     if ss_paths.registry_exists() {
-        check_pass("Registry exists");
+        check_pass(t!(Msg::DoctorRegistryExists));
     } else {
-        check_fail("Registry not found at ~/.skillsync/registry/");
+        check_fail(t!(Msg::DoctorRegistryNotFound));
         issues += 1;
         // If registry doesn't exist, remaining checks are moot for manifest.
         println!();
         println!(
-            "  Run '{}' to initialize the registry.",
-            style("skillsync init").cyan()
+            "  {}",
+            t!(Msg::DoctorRunInitHint { cmd: "skillsync init".to_string() })
         );
         // Still check Claude Code paths.
         check_claude_paths(&claude_paths, &mut issues);
@@ -50,11 +53,11 @@ pub fn run() -> Result<()> {
     // 2. manifest.yaml is parseable?
     let manifest = match Manifest::load(&ss_paths.manifest) {
         Ok(m) => {
-            check_pass("manifest.yaml is parseable");
+            check_pass(t!(Msg::DoctorManifestValid));
             Some(m)
         }
         Err(e) => {
-            check_fail(&format!("manifest.yaml failed to parse: {}", e));
+            check_fail(t!(Msg::DoctorManifestParseFailed { error: e.to_string() }));
             issues += 1;
             None
         }
@@ -64,15 +67,12 @@ pub fn run() -> Result<()> {
     if let Some(ref m) = manifest {
         match m.validate() {
             Ok(()) => {
-                check_pass("manifest.yaml passes validation");
+                check_pass(t!(Msg::DoctorManifestValid));
             }
             Err(errors) => {
-                check_warn(&format!(
-                    "manifest.yaml has {} validation issue(s):",
-                    errors.len()
-                ));
+                check_warn(t!(Msg::DoctorValidationIssues { count: errors.len() }));
                 for err in &errors {
-                    println!("    - {}", err);
+                    println!("{}", t!(Msg::DoctorValidationError { error: err.to_string() }));
                 }
                 warnings += 1;
             }
@@ -84,15 +84,15 @@ pub fn run() -> Result<()> {
         Ok(repo) => match repo.find_remote("origin") {
             Ok(remote) => {
                 let url = remote.url().unwrap_or("(no URL)");
-                check_pass(&format!("Git remote 'origin' configured: {}", url));
+                check_pass(t!(Msg::DoctorOriginConfigured { url: url.to_string() }));
             }
             Err(_) => {
-                check_warn("Git remote 'origin' not configured (sync will not work)");
+                check_warn(t!(Msg::DoctorNoOrigin));
                 warnings += 1;
             }
         },
         Err(_) => {
-            check_fail("Registry is not a git repository");
+            check_fail(t!(Msg::DoctorNotGitRepo));
             issues += 1;
         }
     }
@@ -114,11 +114,11 @@ pub fn run() -> Result<()> {
     print_summary(issues, warnings)
 }
 
-fn check_claude_paths(claude_paths: &ClaudePaths, issues: &mut u32) {
+fn check_claude_paths(claude_paths: &ClaudePaths, issues: &mut usize) {
     if claude_paths.exists() {
-        check_pass("Claude Code home (~/.claude/) exists");
+        check_pass(t!(Msg::DoctorClaudeHomeExists));
     } else {
-        check_fail("Claude Code home (~/.claude/) not found");
+        check_fail(t!(Msg::DoctorClaudeHomeNotFound));
         *issues += 1;
     }
 }
@@ -126,7 +126,7 @@ fn check_claude_paths(claude_paths: &ClaudePaths, issues: &mut u32) {
 fn check_orphaned_resources(
     ss_paths: &SkillSyncPaths,
     manifest: &Manifest,
-    warnings: &mut u32,
+    warnings: &mut usize,
 ) {
     // Collect skill names from manifest.
     let manifest_skills: HashSet<&str> = manifest.skills.keys().map(|s| s.as_str()).collect();
@@ -146,32 +146,29 @@ fn check_orphaned_resources(
                     }
                 }
                 if orphaned.is_empty() {
-                    check_pass("No orphaned resources found");
+                    check_pass(t!(Msg::DoctorNoOrphaned));
                 } else {
-                    check_warn(&format!(
-                        "{} orphaned skill(s) in resources/skills/ (not in manifest):",
-                        orphaned.len()
-                    ));
+                    check_warn(t!(Msg::DoctorOrphanedSkills { count: orphaned.len() }));
                     for name in &orphaned {
-                        println!("    - {}", name);
+                        println!("{}", t!(Msg::DoctorOrphanedSkill { name: name.to_string() }));
                     }
                     *warnings += 1;
                 }
             }
             Err(_) => {
-                check_warn("Could not read resources/skills/ directory");
+                check_warn(t!(Msg::DoctorOrphanedReadError));
                 *warnings += 1;
             }
         }
     } else {
-        check_pass("No orphaned resources found");
+        check_pass(t!(Msg::DoctorNoOrphaned));
     }
 }
 
 fn check_missing_resources(
     ss_paths: &SkillSyncPaths,
     manifest: &Manifest,
-    warnings: &mut u32,
+    warnings: &mut usize,
 ) {
     let mut missing = Vec::new();
 
@@ -183,38 +180,36 @@ fn check_missing_resources(
     }
 
     if missing.is_empty() {
-        check_pass("All manifest skills have matching resource files");
+        check_pass(t!(Msg::DoctorManifestSkillsOk));
     } else {
-        check_warn(&format!(
-            "{} skill(s) referenced in manifest but missing on disk:",
-            missing.len()
-        ));
+        check_warn(t!(Msg::DoctorMissingSkills { count: missing.len() }));
         for name in &missing {
-            println!("    - {}", name);
+            println!("{}", t!(Msg::DoctorMissingSkill { name: name.to_string() }));
         }
         *warnings += 1;
     }
 }
 
-fn print_summary(issues: u32, warnings: u32) -> Result<()> {
+fn print_summary(issues: usize, warnings: usize) -> Result<()> {
     if issues == 0 && warnings == 0 {
         println!(
-            "  {} All checks passed!",
-            style("✓").green().bold()
+            "  {} {}",
+            style("✓").green().bold(),
+            t!(Msg::DoctorAllPassed)
         );
     } else {
         if issues > 0 {
             println!(
-                "  {} {} issue(s) found",
+                "  {} {}",
                 style("✗").red().bold(),
-                issues
+                t!(Msg::DoctorIssues { count: issues })
             );
         }
         if warnings > 0 {
             println!(
-                "  {} {} warning(s)",
+                "  {} {}",
                 style("⚠").yellow().bold(),
-                warnings
+                t!(Msg::DoctorWarnings { count: warnings })
             );
         }
     }

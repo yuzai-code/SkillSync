@@ -7,7 +7,11 @@ use anyhow::{Context, Result};
 use console::style;
 use inquire::{Confirm, MultiSelect, Select};
 
+use crate::i18n::Msg;
 use crate::registry::Manifest;
+
+#[allow(unused_imports)]
+use crate::t;
 
 // ---------------------------------------------------------------------------
 // ConfigMethod (4.1)
@@ -27,11 +31,9 @@ pub enum ConfigMethod {
 impl fmt::Display for ConfigMethod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConfigMethod::FromProfile => write!(f, "From profile  — start with a predefined bundle"),
-            ConfigMethod::Manual => write!(f, "Manual        — pick resources one by one"),
-            ConfigMethod::CopyFromProject => {
-                write!(f, "Copy project  — reuse another project's config")
-            }
+            ConfigMethod::FromProfile => write!(f, "{}", t!(Msg::SelectorFromProfile)),
+            ConfigMethod::Manual => write!(f, "{}", t!(Msg::SelectorManual)),
+            ConfigMethod::CopyFromProject => write!(f, "{}", t!(Msg::SelectorCopyProject)),
         }
     }
 }
@@ -44,10 +46,11 @@ pub fn choose_config_method() -> Result<ConfigMethod> {
         ConfigMethod::CopyFromProject,
     ];
 
-    let choice = Select::new("How would you like to configure this project?", options)
+    let prompt = t!(Msg::SelectorConfigurePrompt);
+    let choice = Select::new(&prompt, options)
         .with_help_message("Use arrow keys to navigate, Enter to select")
         .prompt()
-        .context("Configuration method selection was cancelled")?;
+        .context(t!(Msg::SelectorConfigureCancelled))?;
 
     Ok(choice)
 }
@@ -120,7 +123,7 @@ fn build_resource_options(manifest: &Manifest) -> Vec<ResourceOption> {
         let desc = entry
             .description
             .as_deref()
-            .unwrap_or("no description");
+            .unwrap_or("n/a");
         let label = format!("[skill]  {} ({}) — {}", name, scope_tag, desc);
         options.push(ResourceOption {
             label,
@@ -186,10 +189,7 @@ pub fn select_resources(
     let options = build_resource_options(manifest);
 
     if options.is_empty() {
-        println!(
-            "{}",
-            style("Registry is empty — nothing to select.").yellow()
-        );
+        println!("{}", style(t!(Msg::SelectorEmpty)).yellow());
         return Ok(SelectedResources::default());
     }
 
@@ -201,12 +201,13 @@ pub fn select_resources(
         .map(|(i, _)| i)
         .collect();
 
-    let selected = MultiSelect::new("Select resources to install:", options)
+    let resources_prompt = t!(Msg::SelectorResourcesPrompt);
+    let selected = MultiSelect::new(&resources_prompt, options)
         .with_default(&defaults)
         .with_help_message("Type to filter, Space to toggle, Enter to confirm")
         .with_page_size(15)
         .prompt()
-        .context("Resource selection was cancelled")?;
+        .with_context(|| t!(Msg::SelectorResourcesCancelled))?;
 
     // Split selections back into categories.
     let mut result = SelectedResources::default();
@@ -228,11 +229,11 @@ pub fn select_resources(
 /// Display a summary of selected resources and ask for confirmation.
 pub fn confirm_preview(selected: &SelectedResources) -> Result<bool> {
     println!();
-    println!("{}", style("=== Installation Preview ===").bold().cyan());
+    println!("{}", style(t!(Msg::SelectorPreviewHeader)).bold().cyan());
     println!();
 
     if !selected.skills.is_empty() {
-        println!("  {} Skills:", style(selected.skills.len()).green().bold());
+        println!("  {} {}", style(selected.skills.len()).green().bold(), t!(Msg::SelectorSkillsLabel));
         for name in &selected.skills {
             println!("    {} {}", style("+").green(), name);
         }
@@ -240,8 +241,9 @@ pub fn confirm_preview(selected: &SelectedResources) -> Result<bool> {
 
     if !selected.plugins.is_empty() {
         println!(
-            "  {} Plugins:",
-            style(selected.plugins.len()).green().bold()
+            "  {} {}",
+            style(selected.plugins.len()).green().bold(),
+            t!(Msg::SelectorPluginsLabel)
         );
         for name in &selected.plugins {
             println!("    {} {}", style("+").green(), name);
@@ -250,8 +252,9 @@ pub fn confirm_preview(selected: &SelectedResources) -> Result<bool> {
 
     if !selected.mcp.is_empty() {
         println!(
-            "  {} MCP servers:",
-            style(selected.mcp.len()).green().bold()
+            "  {} {}",
+            style(selected.mcp.len()).green().bold(),
+            t!(Msg::SelectorMcpLabel)
         );
         for name in &selected.mcp {
             println!("    {} {}", style("+").green(), name);
@@ -259,24 +262,22 @@ pub fn confirm_preview(selected: &SelectedResources) -> Result<bool> {
     }
 
     if selected.is_empty() {
-        println!(
-            "  {}",
-            style("No resources selected.").yellow()
-        );
+        println!("  {}", style(t!(Msg::SelectorNoResources)).yellow());
         return Ok(false);
     }
 
     println!();
     println!(
-        "  Total: {} resource(s)",
-        style(selected.total()).bold()
+        "  {}",
+        t!(Msg::SelectorTotal { count: selected.total() })
     );
     println!();
 
-    let confirmed = Confirm::new("Apply these changes?")
+    let apply_prompt = t!(Msg::SelectorApplyPrompt);
+    let confirmed = Confirm::new(&apply_prompt)
         .with_default(true)
         .prompt()
-        .context("Confirmation prompt was cancelled")?;
+        .with_context(|| t!(Msg::SelectorConfirmCancelled))?;
 
     Ok(confirmed)
 }

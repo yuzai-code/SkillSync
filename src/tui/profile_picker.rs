@@ -8,7 +8,11 @@ use anyhow::{bail, Context, Result};
 use console::style;
 use inquire::Select;
 
+use crate::i18n::Msg;
 use crate::registry::{Manifest, ProfileConfig};
+
+#[allow(unused_imports)]
+use crate::t;
 
 // ---------------------------------------------------------------------------
 // ProfileOption — display wrapper for Select prompt
@@ -55,10 +59,7 @@ impl fmt::Display for ProfileOption {
 /// Returns the profile name (key in the manifest).
 pub fn pick_profile(manifest: &Manifest, registry_root: &Path) -> Result<String> {
     if manifest.profiles.is_empty() {
-        bail!(
-            "No profiles found in the registry. \
-             Create one with `skillsync profile create <name>`."
-        );
+        bail!("{}", t!(Msg::ProfilePickerEmpty));
     }
 
     let mut options: Vec<ProfileOption> = Vec::new();
@@ -83,9 +84,9 @@ pub fn pick_profile(manifest: &Manifest, registry_root: &Path) -> Result<String>
                 ),
                 Err(_) => {
                     eprintln!(
-                        "  {} could not load profile YAML: {}",
+                        "  {} {}",
                         style("warning:").yellow(),
-                        profile_path.display()
+                        t!(Msg::ProfilePickerLoadError { error: profile_path.display().to_string() })
                     );
                     (String::new(), 0, 0, 0)
                 }
@@ -100,10 +101,11 @@ pub fn pick_profile(manifest: &Manifest, registry_root: &Path) -> Result<String>
         });
     }
 
-    let selected = Select::new("Select a profile:", options)
+    let prompt = t!(Msg::ProfilePickerPrompt);
+    let selected = Select::new(&prompt, options)
         .with_help_message("Profiles bundle skills, plugins, and MCP servers together")
         .prompt()
-        .context("Profile selection was cancelled")?;
+        .with_context(|| t!(Msg::ProfilePickerCancelled))?;
 
     Ok(selected.name)
 }

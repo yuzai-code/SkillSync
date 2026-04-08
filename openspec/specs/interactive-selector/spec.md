@@ -1,5 +1,33 @@
 ## ADDED Requirements
 
+### Requirement: TUI i18n support
+The system SHALL support displaying TUI prompts and option labels in the user's preferred language via the i18n module.
+
+#### Scenario: Chinese TUI prompts
+- **WHEN** language is set to `zh` and user runs `skillsync use`
+- **THEN** the prompt question SHALL display "请选择配置方式"
+- **AND** options SHALL display as "从 profile 开始 — 使用预定义的资源包", "手动选择 — 逐个选择资源", "复制项目 — 复用其他项目的配置"
+
+#### Scenario: English TUI prompts
+- **WHEN** language is set to `en` and user runs `skillsync use`
+- **THEN** the prompt question SHALL display "How would you like to configure this project?"
+- **AND** options SHALL display as "From profile  — start with a predefined bundle", "Manual        — pick resources one by one", "Copy project  — reuse another project's config"
+
+### Requirement: Resource selection i18n
+The resource multi-select interface SHALL display prompts and help text via the i18n module.
+
+#### Scenario: Chinese resource selection
+- **WHEN** language is set to `zh`
+- **THEN** the prompt SHALL display "选择要安装的资源："
+- **AND** the help text SHALL display "Type to filter, Space to toggle, Enter to confirm" (clap help remains in English)
+
+### Requirement: Conflict resolution i18n
+The conflict resolution interface SHALL display option labels via the i18n module.
+
+#### Scenario: Chinese conflict resolution
+- **WHEN** language is set to `zh` and merge conflicts exist
+- **THEN** options SHALL display as "保留本地   — 丢弃远程更改", "使用远程   — 丢弃本地更改", "打开编辑器 — 在 $EDITOR 中手动解决"
+
 ### Requirement: Interactive project configuration
 The system SHALL provide an interactive TUI via `skillsync use` that guides users through selecting resources for the current project.
 

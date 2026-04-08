@@ -1,17 +1,19 @@
 use anyhow::{Context, Result};
-use console::style;
 
 use crate::claude::paths::SkillSyncPaths;
+use crate::i18n::Msg;
+#[allow(unused_imports)]
+use crate::t;
 use crate::registry::manifest::Manifest;
 
 pub fn run(query: &str) -> Result<()> {
     let ss_paths = SkillSyncPaths::resolve()?;
     if !ss_paths.registry_exists() {
-        anyhow::bail!("Registry not found. Run 'skillsync init' first.");
+        anyhow::bail!("{}", t!(Msg::PullRegistryNotFound { path: ss_paths.registry.to_string_lossy().to_string() }));
     }
 
     let manifest = Manifest::load(&ss_paths.manifest)
-        .context("Failed to load manifest")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     let query_lower = query.to_lowercase();
     let mut matches: Vec<SearchMatch> = Vec::new();
@@ -92,8 +94,8 @@ pub fn run(query: &str) -> Result<()> {
 
     if matches.is_empty() {
         println!(
-            "No results for '{}'.",
-            style(query).yellow()
+            "{}",
+            t!(Msg::SearchNoResults { query: query.to_string() })
         );
         return Ok(());
     }
@@ -106,26 +108,27 @@ pub fn run(query: &str) -> Result<()> {
     });
 
     println!(
-        "Found {} result(s) for '{}':",
-        style(matches.len()).bold(),
-        style(query).yellow()
+        "{}",
+        t!(Msg::SearchResults { count: matches.len(), query: query.to_string() })
     );
     println!();
 
     for m in &matches {
         println!(
-            "  {} {} {}",
-            style(format!("[{}]", m.resource_type)).dim(),
-            style(&m.name).cyan().bold(),
-            if m.description.is_empty() {
-                String::new()
-            } else {
-                format!("— {}", m.description)
-            }
+            "  {}",
+            t!(Msg::SearchResultRow {
+                kind: format!("[{}]", m.resource_type),
+                name: m.name.clone(),
+                desc: if m.description.is_empty() {
+                    String::new()
+                } else {
+                    format!("— {}", m.description)
+                }
+            })
         );
         println!(
-            "    matched on: {}",
-            style(&m.match_context).dim()
+            "    {}",
+            t!(Msg::SearchMatchedOn { field: m.match_context.clone() })
         );
     }
 

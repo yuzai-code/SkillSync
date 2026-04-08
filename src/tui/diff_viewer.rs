@@ -7,6 +7,11 @@ use anyhow::{Context, Result};
 use console::style;
 use inquire::Select;
 
+use crate::i18n::Msg;
+
+#[allow(unused_imports)]
+use crate::t;
+
 // ---------------------------------------------------------------------------
 // Resolution enum
 // ---------------------------------------------------------------------------
@@ -25,9 +30,9 @@ pub enum Resolution {
 impl fmt::Display for Resolution {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Resolution::KeepLocal => write!(f, "Keep local   — discard remote changes"),
-            Resolution::UseRemote => write!(f, "Use remote   — discard local changes"),
-            Resolution::OpenEditor => write!(f, "Open editor  — manually resolve in $EDITOR"),
+            Resolution::KeepLocal => write!(f, "{}", t!(Msg::DiffKeepLocal)),
+            Resolution::UseRemote => write!(f, "{}", t!(Msg::DiffUseRemote)),
+            Resolution::OpenEditor => write!(f, "{}", t!(Msg::DiffOpenEditor)),
         }
     }
 }
@@ -44,15 +49,10 @@ impl fmt::Display for Resolution {
 pub fn show_diff(local_content: &str, remote_content: &str, filename: &str) {
     println!();
     println!(
-        "{} {}",
-        style("--- Conflict:").bold().red(),
-        style(filename).bold()
+        "{}",
+        style(t!(Msg::DiffConflictHeader { file: filename.to_string() })).bold().red()
     );
-    println!(
-        "  {} local (ours)    {} remote (theirs)",
-        style("---").red(),
-        style("+++").green()
-    );
+    println!("{}", t!(Msg::DiffLocalRemote));
     println!();
 
     let local_lines: Vec<&str> = local_content.lines().collect();
@@ -147,10 +147,11 @@ pub fn choose_resolution() -> Result<Resolution> {
         Resolution::OpenEditor,
     ];
 
-    let choice = Select::new("How would you like to resolve this conflict?", options)
+    let prompt = t!(Msg::DiffResolvePrompt);
+    let choice = Select::new(&prompt, options)
         .with_help_message("Choose a resolution strategy")
         .prompt()
-        .context("Conflict resolution selection was cancelled")?;
+        .with_context(|| t!(Msg::DiffResolveCancelled))?;
 
     Ok(choice)
 }

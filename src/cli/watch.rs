@@ -7,6 +7,9 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
+#[allow(unused_imports)]
+use crate::t;
+use crate::i18n::Msg;
 use crate::watcher::fs_watcher;
 
 pub fn run(daemon: bool, install: bool, uninstall: bool) -> Result<()> {
@@ -35,14 +38,12 @@ fn run_foreground() -> Result<()> {
     let dirs = fs_watcher::default_watch_dirs()?;
 
     if dirs.is_empty() {
-        bail!(
-            "No directories to watch. Run 'skillsync init' to initialize the registry first."
-        );
+        bail!("{}", t!(Msg::WatchNoDirs));
     }
 
     eprintln!(
         "{}",
-        console::style("Starting SkillSync file watcher (foreground)...").bold()
+        console::style(t!(Msg::WatchStarting)).bold()
     );
 
     fs_watcher::watch_directories(dirs, || {
@@ -59,20 +60,20 @@ fn run_foreground() -> Result<()> {
 /// Re-spawns the current binary with `watch` (without `--daemon`) and
 /// detaches it. On failure, suggests using `nohup` as a fallback.
 fn run_daemon() -> Result<()> {
-    let binary = std::env::current_exe().context("Failed to determine current executable path")?;
+    let binary = std::env::current_exe().with_context(|| t!(Msg::ContextCurrentDir))?;
 
     // Ensure log directory exists
     let log_dir = skillsync_log_dir()?;
     fs::create_dir_all(&log_dir)
-        .with_context(|| format!("Failed to create log directory: {}", log_dir.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: log_dir.display().to_string() }))?;
 
     let stdout_log = log_dir.join("watcher.log");
     let stderr_log = log_dir.join("watcher.err.log");
 
     let stdout_file = fs::File::create(&stdout_log)
-        .with_context(|| format!("Failed to create log file: {}", stdout_log.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: stdout_log.display().to_string() }))?;
     let stderr_file = fs::File::create(&stderr_log)
-        .with_context(|| format!("Failed to create log file: {}", stderr_log.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: stderr_log.display().to_string() }))?;
 
     let child = Command::new(&binary)
         .arg("watch")
@@ -83,32 +84,34 @@ fn run_daemon() -> Result<()> {
     match child {
         Ok(child) => {
             eprintln!(
-                "{} Watcher daemon started (PID: {})",
+                "{} {}",
                 console::style("[daemon]").green().bold(),
-                child.id()
+                t!(Msg::WatchDaemonStarted { pid: child.id() })
             );
-            eprintln!("  Logs: {}", stdout_log.display());
-            eprintln!("  Errors: {}", stderr_log.display());
+            eprintln!("  {}", t!(Msg::WatchLogs { path: stdout_log.display().to_string() }));
+            eprintln!("  {}", t!(Msg::WatchErrors { path: stderr_log.display().to_string() }));
             eprintln!(
-                "  Stop with: {} or {}",
-                console::style("kill").yellow(),
-                console::style("skillsync watch --uninstall").yellow()
+                "  {}",
+                t!(Msg::WatchStopWith {
+                    cmd1: "kill".to_string(),
+                    cmd2: "skillsync watch --uninstall".to_string()
+                })
             );
             Ok(())
         }
         Err(e) => {
             eprintln!(
-                "{} Failed to start daemon: {}",
+                "{} {}",
                 console::style("Error:").red(),
-                e
+                t!(Msg::WatchDaemonFailed { error: e.to_string() })
             );
             eprintln!(
-                "  Try running manually: {} {} {}",
-                console::style("nohup").yellow(),
-                binary.display(),
-                console::style("watch &").yellow()
+                "  {}",
+                t!(Msg::WatchTryManual {
+                    cmd: format!("nohup {} watch &", binary.display())
+                })
             );
-            bail!("Failed to start watcher daemon: {}", e);
+            bail!("{}", t!(Msg::WatchDaemonFailed { error: e.to_string() }));
         }
     }
 }
@@ -124,28 +127,25 @@ fn install_service() -> Result<()> {
     } else if cfg!(target_os = "linux") {
         install_systemd_service()
     } else {
-        bail!(
-            "System service installation is not supported on this platform. \
-             Use `skillsync watch --daemon` instead."
-        );
+        bail!("{}", t!(Msg::WatchServiceNotSupported));
     }
 }
 
 /// Generate and load a macOS launchd plist.
 fn install_launchd_service() -> Result<()> {
-    let binary = std::env::current_exe().context("Failed to determine current executable path")?;
-    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let binary = std::env::current_exe().with_context(|| t!(Msg::ContextCurrentDir))?;
+    let home = dirs::home_dir().with_context(|| t!(Msg::ContextHomeDir))?;
 
     let plist_dir = home.join("Library/LaunchAgents");
     fs::create_dir_all(&plist_dir)
-        .with_context(|| format!("Failed to create {}", plist_dir.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: plist_dir.display().to_string() }))?;
 
     let plist_path = plist_dir.join("com.skillsync.watcher.plist");
 
     // Ensure log directory exists
     let log_dir = skillsync_log_dir()?;
     fs::create_dir_all(&log_dir)
-        .with_context(|| format!("Failed to create log directory: {}", log_dir.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: log_dir.display().to_string() }))?;
 
     let plist_content = format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -175,12 +175,12 @@ fn install_launchd_service() -> Result<()> {
     );
 
     fs::write(&plist_path, &plist_content)
-        .with_context(|| format!("Failed to write plist to {}", plist_path.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: plist_path.display().to_string() }))?;
 
     eprintln!(
-        "{} Wrote plist: {}",
+        "{} {}",
         console::style("[install]").green().bold(),
-        plist_path.display()
+        t!(Msg::WatchWrotePlist { path: plist_path.display().to_string() })
     );
 
     // Load the service via launchctl
@@ -188,22 +188,23 @@ fn install_launchd_service() -> Result<()> {
         .args(["load", "-w"])
         .arg(&plist_path)
         .status()
-        .context("Failed to run launchctl")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     if status.success() {
         eprintln!(
-            "{} Service loaded. The watcher will start automatically on login.",
-            console::style("[install]").green().bold()
+            "{} {}",
+            console::style("[install]").green().bold(),
+            t!(Msg::WatchServiceLoaded)
         );
     } else {
         eprintln!(
-            "{} launchctl load returned non-zero exit code. \
-             The plist has been written but the service may not be running.",
-            console::style("Warning:").yellow()
+            "{} {}",
+            console::style("Warning:").yellow(),
+            t!(Msg::WatchLaunchctlWarning)
         );
         eprintln!(
-            "  Try manually: launchctl load -w {}",
-            plist_path.display()
+            "  {}",
+            t!(Msg::WatchLaunchctlHint { path: plist_path.display().to_string() })
         );
     }
 
@@ -212,12 +213,12 @@ fn install_launchd_service() -> Result<()> {
 
 /// Generate and enable a Linux systemd user service.
 fn install_systemd_service() -> Result<()> {
-    let binary = std::env::current_exe().context("Failed to determine current executable path")?;
-    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let binary = std::env::current_exe().with_context(|| t!(Msg::ContextCurrentDir))?;
+    let home = dirs::home_dir().with_context(|| t!(Msg::ContextHomeDir))?;
 
     let service_dir = home.join(".config/systemd/user");
     fs::create_dir_all(&service_dir)
-        .with_context(|| format!("Failed to create {}", service_dir.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: service_dir.display().to_string() }))?;
 
     let service_path = service_dir.join("skillsync-watcher.service");
 
@@ -237,44 +238,48 @@ WantedBy=default.target"#,
     );
 
     fs::write(&service_path, &service_content)
-        .with_context(|| format!("Failed to write service file to {}", service_path.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: service_path.display().to_string() }))?;
 
     eprintln!(
-        "{} Wrote service file: {}",
+        "{} {}",
         console::style("[install]").green().bold(),
-        service_path.display()
+        t!(Msg::WatchWroteService { path: service_path.display().to_string() })
     );
 
     // Reload systemd daemon and enable the service
     let reload_status = Command::new("systemctl")
         .args(["--user", "daemon-reload"])
         .status()
-        .context("Failed to run systemctl daemon-reload")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     if !reload_status.success() {
         eprintln!(
-            "{} systemctl daemon-reload failed.",
-            console::style("Warning:").yellow()
+            "{} {}",
+            console::style("Warning:").yellow(),
+            t!(Msg::WatchSystemctlReloadFailed)
         );
     }
 
     let enable_status = Command::new("systemctl")
         .args(["--user", "enable", "--now", "skillsync-watcher.service"])
         .status()
-        .context("Failed to run systemctl enable")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     if enable_status.success() {
         eprintln!(
-            "{} Service enabled and started. The watcher will start automatically on login.",
-            console::style("[install]").green().bold()
+            "{} {}",
+            console::style("[install]").green().bold(),
+            t!(Msg::WatchServiceEnabled)
         );
     } else {
         eprintln!(
-            "{} systemctl enable returned non-zero exit code.",
-            console::style("Warning:").yellow()
+            "{} {}",
+            console::style("Warning:").yellow(),
+            t!(Msg::WatchSystemctlEnableFailed)
         );
         eprintln!(
-            "  Try manually: systemctl --user enable --now skillsync-watcher.service"
+            "  {}",
+            t!(Msg::WatchSystemctlHint)
         );
     }
 
@@ -292,23 +297,20 @@ fn uninstall_service() -> Result<()> {
     } else if cfg!(target_os = "linux") {
         uninstall_systemd_service()
     } else {
-        bail!(
-            "System service uninstallation is not supported on this platform. \
-             Use 'skillsync watch --daemon' to run the watcher manually."
-        );
+        bail!("{}", t!(Msg::WatchServiceNotSupported));
     }
 }
 
 /// Unload and remove the macOS launchd plist.
 fn uninstall_launchd_service() -> Result<()> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let home = dirs::home_dir().with_context(|| t!(Msg::ContextHomeDir))?;
     let plist_path = home.join("Library/LaunchAgents/com.skillsync.watcher.plist");
 
     if !plist_path.exists() {
         eprintln!(
-            "{} No plist found at {}. Service may not be installed.",
+            "{} {}",
             console::style("Warning:").yellow(),
-            plist_path.display()
+            t!(Msg::WatchNoPlist { path: plist_path.display().to_string() })
         );
         return Ok(());
     }
@@ -318,23 +320,24 @@ fn uninstall_launchd_service() -> Result<()> {
         .args(["unload", "-w"])
         .arg(&plist_path)
         .status()
-        .context("Failed to run launchctl unload")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     if !status.success() {
         eprintln!(
-            "{} launchctl unload returned non-zero exit code. Continuing with file removal.",
-            console::style("Warning:").yellow()
+            "{} {}",
+            console::style("Warning:").yellow(),
+            t!(Msg::WatchLaunchctlUnloadWarning)
         );
     }
 
     // Remove the plist file
     fs::remove_file(&plist_path)
-        .with_context(|| format!("Failed to remove plist: {}", plist_path.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: plist_path.display().to_string() }))?;
 
     eprintln!(
-        "{} Service unloaded and plist removed: {}",
+        "{} {}",
         console::style("[uninstall]").green().bold(),
-        plist_path.display()
+        t!(Msg::WatchServiceUnloaded { path: plist_path.display().to_string() })
     );
 
     Ok(())
@@ -342,14 +345,14 @@ fn uninstall_launchd_service() -> Result<()> {
 
 /// Disable and remove the Linux systemd user service.
 fn uninstall_systemd_service() -> Result<()> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let home = dirs::home_dir().with_context(|| t!(Msg::ContextHomeDir))?;
     let service_path = home.join(".config/systemd/user/skillsync-watcher.service");
 
     if !service_path.exists() {
         eprintln!(
-            "{} No service file found at {}. Service may not be installed.",
+            "{} {}",
             console::style("Warning:").yellow(),
-            service_path.display()
+            t!(Msg::WatchNoServiceFile { path: service_path.display().to_string() })
         );
         return Ok(());
     }
@@ -363,18 +366,19 @@ fn uninstall_systemd_service() -> Result<()> {
             "skillsync-watcher.service",
         ])
         .status()
-        .context("Failed to run systemctl disable")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     if !status.success() {
         eprintln!(
-            "{} systemctl disable returned non-zero exit code. Continuing with file removal.",
-            console::style("Warning:").yellow()
+            "{} {}",
+            console::style("Warning:").yellow(),
+            t!(Msg::WatchSystemctlDisableWarning)
         );
     }
 
     // Remove the service file
     fs::remove_file(&service_path)
-        .with_context(|| format!("Failed to remove service file: {}", service_path.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: service_path.display().to_string() }))?;
 
     // Reload daemon to pick up the removal
     let _ = Command::new("systemctl")
@@ -382,9 +386,9 @@ fn uninstall_systemd_service() -> Result<()> {
         .status();
 
     eprintln!(
-        "{} Service disabled and removed: {}",
+        "{} {}",
         console::style("[uninstall]").green().bold(),
-        service_path.display()
+        t!(Msg::WatchServiceDisabled { path: service_path.display().to_string() })
     );
 
     Ok(())
@@ -396,6 +400,6 @@ fn uninstall_systemd_service() -> Result<()> {
 
 /// Returns the SkillSync log directory (`~/.skillsync/`).
 fn skillsync_log_dir() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let home = dirs::home_dir().with_context(|| t!(Msg::ContextHomeDir))?;
     Ok(home.join(".skillsync"))
 }

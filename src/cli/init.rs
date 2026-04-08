@@ -5,12 +5,15 @@ use anyhow::{bail, Context, Result};
 use console::style;
 use git2::Repository;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::claude::paths::ClaudePaths;
+use crate::i18n::Msg;
 use crate::registry::manifest::Manifest;
 
 /// Return the default registry path: `~/.skillsync/registry/`.
 fn registry_path() -> Result<PathBuf> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let home = dirs::home_dir().context(t!(Msg::ContextHomeDir))?;
     Ok(home.join(".skillsync").join("registry"))
 }
 
@@ -20,11 +23,7 @@ fn init_new(quiet: bool) -> Result<()> {
 
     // Guard: registry must not already exist.
     if reg.exists() {
-        bail!(
-            "Registry already exists at {}\n\
-             Use `skillsync sync` to update, or remove the directory to start fresh.",
-            reg.display()
-        );
+        bail!("{}", t!(Msg::InitRegistryExists { path: reg.display().to_string() }));
     }
 
     // Create directory structure.
@@ -36,24 +35,24 @@ fn init_new(quiet: bool) -> Result<()> {
     ];
     for dir in &dirs {
         fs::create_dir_all(dir)
-            .with_context(|| format!("Failed to create directory: {}", dir.display()))?;
+            .with_context(|| t!(Msg::ContextCreateDir { path: dir.display().to_string() }))?;
     }
 
     // Write empty manifest.
     let manifest_path = reg.join("manifest.yaml");
     Manifest::default_empty()
         .save(&manifest_path)
-        .context("Failed to write empty manifest")?;
+        .context(t!(Msg::ContextFailedToSaveManifest))?;
 
     // Initialize git repository.
     Repository::init(&reg)
-        .with_context(|| format!("Failed to initialize git repository at {}", reg.display()))?;
+        .with_context(|| t!(Msg::ContextFailedToOpenRepo))?;
 
     if !quiet {
         println!(
-            "{} Initialized new SkillSync registry at {}",
+            "{} {}",
             style("✓").green().bold(),
-            style(reg.display().to_string()).cyan()
+            t!(Msg::InitSuccess { path: reg.display().to_string() })
         );
     }
 
@@ -76,47 +75,47 @@ fn init_from(url: &str, quiet: bool) -> Result<()> {
     // Ensure parent directory exists.
     if let Some(parent) = reg.parent() {
         fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create directory: {}", parent.display()))?;
+            .with_context(|| t!(Msg::ContextCreateDir { path: parent.display().to_string() }))?;
     }
 
     // Clone remote repository.
     Repository::clone(url, &reg)
-        .with_context(|| format!("Failed to clone registry from {}", url))?;
+        .with_context(|| t!(Msg::ContextFailedToOpenRepo))?;
 
     // Validate that manifest.yaml exists and is parseable.
     let manifest_path = reg.join("manifest.yaml");
     if !manifest_path.exists() {
-        bail!(
-            "Cloned repository does not contain a manifest.yaml — \
-             this may not be a valid SkillSync registry."
-        );
+        bail!("{}", t!(Msg::ContextFailedToLoadManifest));
     }
 
     let manifest = Manifest::load(&manifest_path)
-        .context("Failed to parse manifest.yaml from cloned registry")?;
+        .context(t!(Msg::ContextFailedToLoadManifest))?;
 
     if let Err(errors) = manifest.validate() {
         eprintln!(
-            "{} manifest.yaml has validation warnings:",
-            style("⚠").yellow().bold()
+            "{} {}",
+            style("⚠").yellow().bold(),
+            t!(Msg::DoctorValidationIssues { count: errors.len() })
         );
         for err in &errors {
-            eprintln!("  - {}", err);
+            eprintln!("{}", t!(Msg::DoctorValidationError { error: err.to_string() }));
         }
     }
 
     if !quiet {
         println!(
-            "{} Cloned SkillSync registry from {}",
+            "{} {}",
             style("✓").green().bold(),
-            style(url).cyan()
+            t!(Msg::InitCloned { url: url.to_string() })
         );
         println!(
-            "  {} skill(s), {} plugin(s), {} MCP server(s), {} profile(s)",
-            manifest.skills.len(),
-            manifest.plugins.len(),
-            manifest.mcp_servers.len(),
-            manifest.profiles.len(),
+            "  {}",
+            t!(Msg::InitScanResult {
+                skills: manifest.skills.len(),
+                plugins: manifest.plugins.len(),
+                mcp: manifest.mcp_servers.len(),
+                profiles: manifest.profiles.len()
+            })
         );
     }
 
@@ -177,7 +176,7 @@ pub fn scan_existing_skills() -> Result<Vec<DiscoveredResource>> {
     }
 
     let entries = fs::read_dir(&claude.skills_dir)
-        .with_context(|| format!("Failed to read {}", claude.skills_dir.display()))?;
+        .with_context(|| t!(Msg::ContextReadDir { path: claude.skills_dir.display().to_string() }))?;
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -210,10 +209,10 @@ pub fn scan_existing_mcp_servers() -> Result<Vec<DiscoveredResource>> {
     }
 
     let contents = fs::read_to_string(&claude.mcp_json)
-        .with_context(|| format!("Failed to read {}", claude.mcp_json.display()))?;
+        .with_context(|| t!(Msg::ContextReadDir { path: claude.mcp_json.display().to_string() }))?;
 
     let root: serde_json::Value = serde_json::from_str(&contents)
-        .with_context(|| format!("Failed to parse {}", claude.mcp_json.display()))?;
+        .with_context(|| t!(Msg::ContextReadDir { path: claude.mcp_json.display().to_string() }))?;
 
     if let Some(servers) = root.get("mcpServers").and_then(|v| v.as_object()) {
         for (name, value) in servers {
@@ -244,18 +243,18 @@ pub fn discover_existing_resources() -> Result<Vec<DiscoveredResource>> {
     match scan_existing_skills() {
         Ok(skills) => all.extend(skills),
         Err(e) => eprintln!(
-            "  {} Could not scan skills: {}",
+            "{} {}",
             style("⚠").yellow(),
-            e
+            t!(Msg::InitScanSkillsError { error: e.to_string() })
         ),
     }
 
     match scan_existing_mcp_servers() {
         Ok(mcp) => all.extend(mcp),
         Err(e) => eprintln!(
-            "  {} Could not scan MCP servers: {}",
+            "{} {}",
             style("⚠").yellow(),
-            e
+            t!(Msg::InitScanMcpError { error: e.to_string() })
         ),
     }
 
@@ -270,32 +269,31 @@ pub fn report_discovered_resources() -> Result<Vec<DiscoveredResource>> {
     let resources = discover_existing_resources()?;
 
     if resources.is_empty() {
-        println!(
-            "  {} No existing Claude Code resources found to import.",
-            style("·").dim()
-        );
+        println!("  {} {}", style("·").dim(), t!(Msg::InitNoResourcesFound));
         return Ok(resources);
     }
 
     println!(
-        "\n{} Found {} existing resource(s) that could be imported:",
+        "\n{} {}",
         style("ℹ").blue().bold(),
-        resources.len()
+        t!(Msg::InitFoundResources { count: resources.len() })
     );
 
     for res in &resources {
         println!(
-            "  {} [{}] {} — {}",
+            "  {} {}",
             style("·").dim(),
-            style(res.kind.to_string()).dim(),
-            style(&res.name).cyan(),
-            style(&res.detail).dim()
+            t!(Msg::InitResourceItem {
+                kind: res.kind.to_string(),
+                name: res.name.clone(),
+                detail: res.detail.clone()
+            })
         );
     }
 
     println!(
-        "\n  Use '{}' to add these to the registry.",
-        style("skillsync add <path>").cyan()
+        "\n  {}",
+        t!(Msg::InitAddHint { cmd: "skillsync add <path>".to_string() })
     );
 
     Ok(resources)

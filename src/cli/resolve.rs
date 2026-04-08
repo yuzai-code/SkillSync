@@ -6,14 +6,17 @@ use std::env;
 use anyhow::{bail, Context, Result};
 use console::style;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::claude::paths::SkillSyncPaths;
+use crate::i18n::Msg;
 use crate::registry::git_ops;
 use crate::tui::diff_viewer::{self, Resolution};
 
 pub fn run() -> Result<()> {
     let ss_paths = SkillSyncPaths::resolve()?;
     if !ss_paths.registry_exists() {
-        bail!("Registry not initialized. Run `skillsync init` first.");
+        bail!("{}", t!(Msg::ResolveNotInitialized));
     }
 
     let repo = git_ops::open_repo(&ss_paths.registry)
@@ -26,8 +29,9 @@ pub fn run() -> Result<()> {
 
     if !index.has_conflicts() {
         println!(
-            "{} No conflicts to resolve.",
-            style("OK").green().bold()
+            "{} {}",
+            style("OK").green().bold(),
+            t!(Msg::ResolveNoConflicts)
         );
         return Ok(());
     }
@@ -48,19 +52,24 @@ pub fn run() -> Result<()> {
 
     if conflicts.is_empty() {
         println!(
-            "{} No conflicts to resolve.",
-            style("OK").green().bold()
+            "{} {}",
+            style("OK").green().bold(),
+            t!(Msg::ResolveNoConflicts)
         );
         return Ok(());
     }
 
     println!(
-        "{} Found {} conflicting file(s):",
+        "{} {}",
         style("!!").red().bold(),
-        style(conflicts.len()).bold()
+        t!(Msg::ResolveFound { count: conflicts.len() })
     );
     for path in &conflicts {
-        println!("  {} {}", style("-").red(), path);
+        println!(
+            "{} {}",
+            style("-").red(),
+            path
+        );
     }
     println!();
 
@@ -88,31 +97,29 @@ pub fn run() -> Result<()> {
 
         match resolution {
             Resolution::KeepLocal => {
-                std::fs::write(&full_path, &local_content).with_context(|| {
-                    format!("Failed to write local version to {}", full_path.display())
-                })?;
+                std::fs::write(&full_path, &local_content)
+                    .with_context(|| format!("Failed to write local version to {}", full_path.display()))?;
                 println!(
-                    "  {} kept local version of {}",
+                    "  {} {}",
                     style("*").cyan(),
-                    conflict_path
+                    t!(Msg::ResolveKeptLocal { file: conflict_path.clone() })
                 );
             }
             Resolution::UseRemote => {
-                std::fs::write(&full_path, &remote_content).with_context(|| {
-                    format!("Failed to write remote version to {}", full_path.display())
-                })?;
+                std::fs::write(&full_path, &remote_content)
+                    .with_context(|| format!("Failed to write remote version to {}", full_path.display()))?;
                 println!(
-                    "  {} applied remote version of {}",
+                    "  {} {}",
                     style("*").cyan(),
-                    conflict_path
+                    t!(Msg::ResolveUsedRemote { file: conflict_path.clone() })
                 );
             }
             Resolution::OpenEditor => {
                 open_in_editor(&full_path)?;
                 println!(
-                    "  {} manually edited {}",
+                    "  {} {}",
                     style("*").cyan(),
-                    conflict_path
+                    t!(Msg::ResolveManuallyEdited { file: conflict_path.clone() })
                 );
             }
         }
@@ -136,9 +143,9 @@ pub fn run() -> Result<()> {
 
         println!();
         println!(
-            "{} Resolved {} conflict(s) and committed.",
+            "{} {}",
             style("OK").green().bold(),
-            resolved_count
+            t!(Msg::ResolveSuccess { count: resolved_count })
         );
     }
 
@@ -224,13 +231,10 @@ fn open_in_editor(path: &std::path::Path) -> Result<()> {
     let status = std::process::Command::new(&editor)
         .arg(path)
         .status()
-        .with_context(|| format!("Failed to launch editor '{}'", editor))?;
+        .with_context(|| t!(Msg::ResolveEditorLaunch { editor: editor.clone() }))?;
 
     if !status.success() {
-        bail!(
-            "Editor '{}' exited with non-zero status. Set the EDITOR environment variable to your preferred editor.",
-            editor
-        );
+        bail!("{}", t!(Msg::ResolveEditorFailed { editor }));
     }
 
     Ok(())

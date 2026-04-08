@@ -3,8 +3,11 @@ use std::env;
 use anyhow::{bail, Context, Result};
 use console::style;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::cli::ProfileAction;
 use crate::claude::paths::{ProjectPaths, SkillSyncPaths};
+use crate::i18n::Msg;
 use crate::registry::manifest::{Manifest, ProfileConfig, ProfileRef, SkillSyncConfig};
 use crate::registry::resource::copy_resource;
 
@@ -24,18 +27,15 @@ pub fn run(action: ProfileAction) -> Result<()> {
 fn list_profiles() -> Result<()> {
     let ss_paths = SkillSyncPaths::resolve()?;
     if !ss_paths.registry_exists() {
-        bail!("Registry not found. Run 'skillsync init' first.");
+        bail!("{}", t!(Msg::ContextResolvePaths));
     }
 
     let manifest = Manifest::load(&ss_paths.manifest)
-        .context("Failed to load manifest")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     if manifest.profiles.is_empty() {
-        println!("No profiles found in the registry.");
-        println!(
-            "Use '{}' to create one.",
-            style("skillsync profile create <name>").cyan()
-        );
+        println!("{}", t!(Msg::ProfileListEmpty));
+        println!("{}", t!(Msg::ProfileListHint { cmd: "skillsync profile create <name>".to_string() }));
         return Ok(());
     }
 
@@ -65,7 +65,7 @@ fn list_profiles() -> Result<()> {
             Err(_) => {
                 rows.push(ProfileRow {
                     name: name.clone(),
-                    description: format!("(error loading {})", profile_ref.path),
+                    description: t!(Msg::ProfileErrorLoading { path: profile_ref.path.clone() }),
                     skills: 0,
                     plugins: 0,
                     mcp: 0,
@@ -88,11 +88,11 @@ fn list_profiles() -> Result<()> {
     // Print header.
     println!(
         "  {:<name_w$}  {:<desc_w$}  {:>6}  {:>7}  {:>3}",
-        style("Profile").bold().underlined(),
-        style("Description").bold().underlined(),
-        style("Skills").bold().underlined(),
-        style("Plugins").bold().underlined(),
-        style("MCP").bold().underlined(),
+        style(t!(Msg::ProfileColName)).bold().underlined(),
+        style(t!(Msg::ProfileColDesc)).bold().underlined(),
+        style(t!(Msg::ProfileColSkills)).bold().underlined(),
+        style(t!(Msg::ProfileColPlugins)).bold().underlined(),
+        style(t!(Msg::ProfileColMcp)).bold().underlined(),
         name_w = name_w,
         desc_w = desc_w,
     );
@@ -111,7 +111,7 @@ fn list_profiles() -> Result<()> {
     }
 
     println!();
-    println!("  {} profile(s) total", style(rows.len()).bold());
+    println!("  {}", t!(Msg::ProfileTotal { count: rows.len() }));
 
     Ok(())
 }
@@ -123,18 +123,15 @@ fn list_profiles() -> Result<()> {
 fn create_profile(name: &str) -> Result<()> {
     let ss_paths = SkillSyncPaths::resolve()?;
     if !ss_paths.registry_exists() {
-        bail!("Registry not found. Run 'skillsync init' first.");
+        bail!("{}", t!(Msg::ContextResolvePaths));
     }
 
     let mut manifest = Manifest::load(&ss_paths.manifest)
-        .context("Failed to load manifest")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     // Check for duplicate name.
     if manifest.profiles.contains_key(name) {
-        bail!(
-            "Profile '{}' already exists. Remove it first with 'skillsync remove' or choose a different name.",
-            name
-        );
+        bail!("{}", t!(Msg::ProfileAlreadyExists { name: name.to_string() }));
     }
 
     // Create a minimal profile YAML.
@@ -150,7 +147,7 @@ fn create_profile(name: &str) -> Result<()> {
     let profile_path = ss_paths.registry.join(&relative_path);
     profile
         .save(&profile_path)
-        .with_context(|| format!("Failed to write profile to {}", profile_path.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: profile_path.display().to_string() }))?;
 
     // Add ProfileRef to manifest.
     manifest.profiles.insert(
@@ -161,22 +158,21 @@ fn create_profile(name: &str) -> Result<()> {
     );
     manifest
         .save(&ss_paths.manifest)
-        .context("Failed to save manifest")?;
+        .with_context(|| t!(Msg::ContextFailedToSaveManifest))?;
 
     println!(
-        "{} Created profile '{}' at {}",
+        "{} {}",
         style("✓").green().bold(),
-        style(name).cyan(),
-        style(&relative_path).dim()
+        t!(Msg::ProfileCreateSuccess { name: name.to_string(), path: relative_path.clone() })
     );
     println!();
     println!(
-        "  Edit {} to add skills, plugins, and MCP servers.",
-        style(profile_path.display().to_string()).dim()
+        "  {}",
+        t!(Msg::ProfileEditHint { path: profile_path.display().to_string() })
     );
     println!(
-        "  Or use '{}' to populate from a project config.",
-        style(format!("skillsync profile export {}", name)).cyan()
+        "  {}",
+        t!(Msg::ProfileExportHint { cmd: format!("skillsync profile export {}", name) })
     );
 
     Ok(())
@@ -189,23 +185,23 @@ fn create_profile(name: &str) -> Result<()> {
 fn apply_profile(name: &str) -> Result<()> {
     let ss_paths = SkillSyncPaths::resolve()?;
     if !ss_paths.registry_exists() {
-        bail!("Registry not found. Run 'skillsync init' first.");
+        bail!("{}", t!(Msg::ContextResolvePaths));
     }
 
     let manifest = Manifest::load(&ss_paths.manifest)
-        .context("Failed to load manifest")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     // Look up the profile in the manifest.
     let profile_ref = manifest
         .profiles
         .get(name)
-        .with_context(|| format!("Profile '{}' not found in manifest.", name))?;
+        .with_context(|| t!(Msg::ProfileNotFound { name: name.to_string() }))?;
 
     let profile_path = ss_paths.registry.join(&profile_ref.path);
     let profile = ProfileConfig::load(&profile_path)
-        .with_context(|| format!("Failed to load profile from {}", profile_path.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: profile_path.display().to_string() }))?;
 
-    let cwd = env::current_dir().context("Failed to determine current directory")?;
+    let cwd = env::current_dir().with_context(|| t!(Msg::ContextCurrentDir))?;
     let project = ProjectPaths::new(&cwd);
     project.ensure_dirs()?;
 
@@ -219,27 +215,26 @@ fn apply_profile(name: &str) -> Result<()> {
             let dst = project.skills_dir.join(skill_name);
             if src.exists() {
                 copy_resource(&src, &dst).with_context(|| {
-                    format!("Failed to copy skill '{}' to project", skill_name)
+                    t!(Msg::InstallerInstallFailed { name: skill_name.clone(), path: dst.display().to_string() })
                 })?;
                 installed_skills += 1;
                 println!(
-                    "  {} Installed skill '{}'",
+                    "  {} {}",
                     style("✓").green(),
-                    skill_name
+                    t!(Msg::ProfileInstallSkill { name: skill_name.clone() })
                 );
             } else {
                 eprintln!(
-                    "  {} Skill '{}' source not found at {}",
+                    "  {} {}",
                     style("✗").red(),
-                    skill_name,
-                    src.display()
+                    t!(Msg::ProfileSkillSourceNotFound { name: skill_name.clone(), path: src.display().to_string() })
                 );
             }
         } else {
             eprintln!(
-                "  {} Skill '{}' not found in manifest (skipped)",
+                "  {} {}",
                 style("⚠").yellow(),
-                skill_name
+                t!(Msg::ProfileSkillNotFound { name: skill_name.clone() })
             );
         }
     }
@@ -250,15 +245,15 @@ fn apply_profile(name: &str) -> Result<()> {
             merge_mcp_entry(&project.mcp_json, mcp_name, mcp_entry)?;
             installed_mcp += 1;
             println!(
-                "  {} Installed MCP server '{}'",
+                "  {} {}",
                 style("✓").green(),
-                mcp_name
+                t!(Msg::ProfileInstallMcp { name: mcp_name.clone() })
             );
         } else {
             eprintln!(
-                "  {} MCP server '{}' not found in manifest (skipped)",
+                "  {} {}",
                 style("⚠").yellow(),
-                mcp_name
+                t!(Msg::ProfileMcpNotFound { name: mcp_name.clone() })
             );
         }
     }
@@ -272,20 +267,22 @@ fn apply_profile(name: &str) -> Result<()> {
     };
     config
         .save(&project.skillsync_yaml)
-        .context("Failed to write skillsync.yaml")?;
+        .with_context(|| t!(Msg::ContextFailedToSaveManifest))?;
 
     println!();
     println!(
-        "{} Applied profile '{}': {} skill(s), {} plugin(s), {} MCP server(s)",
+        "{} {}",
         style("✓").green().bold(),
-        style(name).cyan(),
-        installed_skills,
-        profile.plugins.len(),
-        installed_mcp,
+        t!(Msg::ProfileApplySuccess {
+            name: name.to_string(),
+            skills: installed_skills,
+            plugins: profile.plugins.len(),
+            mcp: installed_mcp
+        }),
     );
     println!(
-        "  Config written to {}",
-        style(project.skillsync_yaml.display().to_string()).dim()
+        "  {}",
+        t!(Msg::ProfileConfigWritten { path: project.skillsync_yaml.display().to_string() })
     );
 
     Ok(())
@@ -300,9 +297,9 @@ fn merge_mcp_entry(
     // Read existing .mcp.json or start from empty object.
     let mut root: serde_json::Value = if mcp_json_path.exists() {
         let contents = std::fs::read_to_string(mcp_json_path)
-            .with_context(|| format!("Failed to read {}", mcp_json_path.display()))?;
+            .with_context(|| t!(Msg::ContextReadDir { path: mcp_json_path.display().to_string() }))?;
         serde_json::from_str(&contents)
-            .with_context(|| format!("Failed to parse {}", mcp_json_path.display()))?
+            .with_context(|| t!(Msg::ContextReadDir { path: mcp_json_path.display().to_string() }))?
     } else {
         serde_json::json!({ "mcpServers": {} })
     };
@@ -310,13 +307,13 @@ fn merge_mcp_entry(
     // Ensure mcpServers key exists.
     let servers = root
         .as_object_mut()
-        .context("Expected .mcp.json to be a JSON object")?
+        .context(t!(Msg::ContextFailedToLoadManifest))?
         .entry("mcpServers")
         .or_insert_with(|| serde_json::json!({}));
 
     let server_obj = servers
         .as_object_mut()
-        .context("Expected mcpServers to be a JSON object")?;
+        .context(t!(Msg::ContextFailedToLoadManifest))?;
 
     // Build the server entry.
     let mut server_value = serde_json::json!({
@@ -330,9 +327,9 @@ fn merge_mcp_entry(
 
     // Write back.
     let formatted = serde_json::to_string_pretty(&root)
-        .context("Failed to serialize .mcp.json")?;
+        .context(t!(Msg::ContextFailedToSaveManifest))?;
     std::fs::write(mcp_json_path, formatted)
-        .with_context(|| format!("Failed to write {}", mcp_json_path.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: mcp_json_path.display().to_string() }))?;
 
     Ok(())
 }
@@ -344,31 +341,25 @@ fn merge_mcp_entry(
 fn export_profile(name: &str) -> Result<()> {
     let ss_paths = SkillSyncPaths::resolve()?;
     if !ss_paths.registry_exists() {
-        bail!("Registry not found. Run 'skillsync init' first.");
+        bail!("{}", t!(Msg::ContextResolvePaths));
     }
 
-    let cwd = env::current_dir().context("Failed to determine current directory")?;
+    let cwd = env::current_dir().with_context(|| t!(Msg::ContextCurrentDir))?;
     let project = ProjectPaths::new(&cwd);
 
     if !project.has_config() {
-        bail!(
-            "No skillsync.yaml found in current project.\n\
-             Use 'skillsync use' to configure the project first."
-        );
+        bail!("{}", t!(Msg::ProfileExportNoConfig));
     }
 
     let config = SkillSyncConfig::load(&project.skillsync_yaml)
-        .context("Failed to load project skillsync.yaml")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     let mut manifest = Manifest::load(&ss_paths.manifest)
-        .context("Failed to load manifest")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     // Check if profile already exists.
     if manifest.profiles.contains_key(name) {
-        bail!(
-            "Profile '{}' already exists. Remove it first or choose a different name.",
-            name
-        );
+        bail!("{}", t!(Msg::ProfileAlreadyExists { name: name.to_string() }));
     }
 
     // Build the profile from the project config.
@@ -384,7 +375,7 @@ fn export_profile(name: &str) -> Result<()> {
     let profile_path = ss_paths.registry.join(&relative_path);
     profile
         .save(&profile_path)
-        .with_context(|| format!("Failed to write profile to {}", profile_path.display()))?;
+        .with_context(|| t!(Msg::ContextCreateDir { path: profile_path.display().to_string() }))?;
 
     // Add ProfileRef to manifest.
     manifest.profiles.insert(
@@ -395,22 +386,24 @@ fn export_profile(name: &str) -> Result<()> {
     );
     manifest
         .save(&ss_paths.manifest)
-        .context("Failed to save manifest")?;
+        .with_context(|| t!(Msg::ContextFailedToSaveManifest))?;
 
     println!(
-        "{} Exported project config as profile '{}'",
+        "{} {}",
         style("✓").green().bold(),
-        style(name).cyan(),
+        t!(Msg::ProfileExportSuccess { name: name.to_string() }),
     );
     println!(
-        "  {} skill(s), {} plugin(s), {} MCP server(s)",
-        profile.skills.len(),
-        profile.plugins.len(),
-        profile.mcp.len(),
+        "  {}",
+        t!(Msg::ProfileExportSummary {
+            skills: profile.skills.len(),
+            plugins: profile.plugins.len(),
+            mcp: profile.mcp.len()
+        }),
     );
     println!(
-        "  Saved to {}",
-        style(profile_path.display().to_string()).dim()
+        "  {}",
+        t!(Msg::ProfileSavedTo { path: profile_path.display().to_string() })
     );
 
     Ok(())

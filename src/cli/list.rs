@@ -1,11 +1,14 @@
 use anyhow::{bail, Context, Result};
 use console::style;
 
+use crate::i18n::Msg;
+#[allow(unused_imports)]
+use crate::t;
 use crate::registry::Manifest;
 
 /// Resolve the manifest path: `~/.skillsync/registry/manifest.yaml`
 fn manifest_path() -> Result<std::path::PathBuf> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let home = dirs::home_dir().with_context(|| t!(Msg::ContextHomeDir))?;
     Ok(home.join(".skillsync").join("registry").join("manifest.yaml"))
 }
 
@@ -22,16 +25,13 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
     if let Some(filter) = type_filter {
         match filter {
             "skill" | "plugin" | "mcp" => {}
-            other => bail!(
-                "Invalid type filter '{}'. Must be one of: skill, plugin, mcp",
-                other
-            ),
+            other => bail!("{}", t!(Msg::ListInvalidTypeFilter { filter: other.to_string() })),
         }
     }
 
     let path = manifest_path()?;
     let manifest = Manifest::load(&path)
-        .context("Failed to load manifest. Have you run 'skillsync init'?")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
     let mut rows: Vec<TableRow> = Vec::new();
 
@@ -73,13 +73,13 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
 
     if rows.is_empty() {
         if let Some(filter) = type_filter {
-            println!("No {} resources found in the registry.", filter);
+            println!("{}", t!(Msg::ListNoResourcesOfType { kind: filter.to_string() }));
         } else {
-            println!("No resources found in the registry.");
+            println!("{}", t!(Msg::ListNoResources));
         }
         println!(
-            "Use '{}' to add resources.",
-            style("skillsync add").cyan()
+            "{}",
+            t!(Msg::ListUseAddHint { cmd: "skillsync add".to_string() })
         );
         return Ok(());
     }
@@ -100,10 +100,10 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
     // Print header.
     println!(
         "  {:<name_w$}  {:<type_w$}  {:<scope_w$}  {:<ver_w$}",
-        style("Name").bold().underlined(),
-        style("Type").bold().underlined(),
-        style("Scope").bold().underlined(),
-        style("Version").bold().underlined(),
+        style(t!(Msg::ListColName)).bold().underlined(),
+        style(t!(Msg::ListColType)).bold().underlined(),
+        style(t!(Msg::ListColScope)).bold().underlined(),
+        style(t!(Msg::ListColVersion)).bold().underlined(),
         name_w = name_width,
         type_w = type_width,
         scope_w = scope_width,
@@ -127,8 +127,8 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
 
     println!();
     println!(
-        "  {} resource(s) total",
-        style(rows.len()).bold()
+        "  {}",
+        t!(Msg::ListTotal { count: rows.len() })
     );
 
     Ok(())

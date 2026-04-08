@@ -7,7 +7,10 @@ use std::env;
 use anyhow::{bail, Context, Result};
 use console::style;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::claude::paths::{ProjectPaths, SkillSyncPaths};
+use crate::i18n::Msg;
 use crate::installer::mcp_installer::merge_mcp_config;
 use crate::installer::settings_merger::write_skillsync_config;
 use crate::installer::skill_installer::install_project_skills;
@@ -25,15 +28,16 @@ pub fn run() -> Result<()> {
     }
 
     let manifest = Manifest::load(&ss_paths.manifest)
-        .context("Failed to load registry manifest")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
-    let project_root = env::current_dir().context("Failed to determine current directory")?;
+    let project_root = env::current_dir()
+        .with_context(|| t!(Msg::ContextCurrentDir))?;
     let project = ProjectPaths::new(&project_root);
 
     println!(
-        "{} Configuring project: {}",
+        "{} {}",
         style(">>").cyan().bold(),
-        style(project_root.display()).bold()
+        t!(Msg::UseConfiguring { path: project_root.display().to_string() })
     );
 
     // 2. Ask how to configure.
@@ -49,7 +53,7 @@ pub fn run() -> Result<()> {
     // 4. Preview and confirm.
     let confirmed = selector::confirm_preview(&selected)?;
     if !confirmed {
-        println!("{}", style("Cancelled — no changes applied.").yellow());
+        println!("{}", style(t!(Msg::UseCancelled)).yellow());
         return Ok(());
     }
 
@@ -58,8 +62,9 @@ pub fn run() -> Result<()> {
 
     println!();
     println!(
-        "{} Project configured successfully!",
-        style("OK").green().bold()
+        "{} {}",
+        style("OK").green().bold(),
+        t!(Msg::UseSuccess)
     );
 
     Ok(())
@@ -88,9 +93,8 @@ fn configure_from_profile(
     pre_selected.extend(profile.mcp.iter().cloned());
 
     println!(
-        "  Profile {} pre-selects {} resources. Adjust if needed:",
-        style(&profile_name).cyan(),
-        style(pre_selected.len()).bold()
+        "  {}",
+        t!(Msg::UseProfilePreSelects { profile: profile_name.clone(), count: pre_selected.len() })
     );
 
     selector::select_resources(manifest, &pre_selected)
@@ -101,7 +105,8 @@ fn configure_from_profile(
 fn configure_from_project(manifest: &Manifest) -> Result<SelectedResources> {
     // Look in common locations for projects with skillsync.yaml.
     // We search the parent directory of the current project for sibling projects.
-    let cwd = env::current_dir().context("Failed to determine current directory")?;
+    let cwd = env::current_dir()
+        .with_context(|| t!(Msg::ContextCurrentDir))?;
 
     let mut candidates: Vec<String> = Vec::new();
 
@@ -124,16 +129,16 @@ fn configure_from_project(manifest: &Manifest) -> Result<SelectedResources> {
     if candidates.is_empty() {
         println!(
             "{}",
-            style("No sibling projects with skillsync.yaml found.").yellow()
+            style(t!(Msg::UseNoSiblingProjects)).yellow()
         );
-        println!("Falling back to manual selection.");
+        println!("{}", t!(Msg::UseFallbackManual));
         return selector::select_resources(manifest, &[]);
     }
 
     candidates.sort();
 
     let selected_project = inquire::Select::new(
-        "Select a project to copy configuration from:",
+        &t!(Msg::UseSelectProject),
         candidates,
     )
     .prompt()
@@ -159,9 +164,8 @@ fn configure_from_project(manifest: &Manifest) -> Result<SelectedResources> {
     pre_selected.extend(config.mcp.iter().cloned());
 
     println!(
-        "  Loaded {} resources from project {}. Adjust if needed:",
-        style(pre_selected.len()).bold(),
-        style(&selected_project).cyan()
+        "  {}",
+        t!(Msg::UseLoadedResources { count: pre_selected.len(), project: selected_project.clone() })
     );
 
     selector::select_resources(manifest, &pre_selected)
@@ -198,19 +202,16 @@ fn apply_selection(
                 mcp_servers.insert(name.clone(), entry.clone());
             } else {
                 eprintln!(
-                    "  {} MCP server '{}' not found in manifest, skipping",
-                    style("warning:").yellow(),
-                    name
+                    "  {}",
+                    t!(Msg::UseMcpNotFound { name: name.clone() })
                 );
             }
         }
         if !mcp_servers.is_empty() {
             merge_mcp_config(&mcp_servers, &project.mcp_json)?;
             println!(
-                "  {} merged {} MCP server(s) into {}",
-                style("*").cyan(),
-                mcp_servers.len(),
-                project.mcp_json.display()
+                "  {}",
+                t!(Msg::UseMergedMcp { count: mcp_servers.len(), path: project.mcp_json.display().to_string() })
             );
         }
     }
@@ -224,9 +225,8 @@ fn apply_selection(
     };
     write_skillsync_config(&config, &project.skillsync_yaml)?;
     println!(
-        "  {} wrote {}",
-        style("*").cyan(),
-        project.skillsync_yaml.display()
+        "  {}",
+        t!(Msg::UseWrote { path: project.skillsync_yaml.display().to_string() })
     );
 
     Ok(())

@@ -3,6 +3,7 @@
 
 pub mod claude;
 pub mod cli;
+pub mod i18n;
 pub mod installer;
 pub mod registry;
 pub mod state;

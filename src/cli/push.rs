@@ -1,18 +1,17 @@
 use anyhow::{bail, Context, Result};
 use console::style;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::claude::paths::SkillSyncPaths;
+use crate::i18n::Msg;
 use crate::registry::git_ops;
 
 pub fn run(auto: bool, quiet: bool) -> Result<()> {
     let paths = SkillSyncPaths::resolve().context("Failed to resolve SkillSync paths")?;
 
     if !paths.registry_exists() {
-        bail!(
-            "Registry not found at {}.\n\
-             Run `skillsync init` or `skillsync init --from <url>` first.",
-            paths.registry.display()
-        );
+        bail!("{}", t!(Msg::PushRegistryNotFound { path: paths.registry.display().to_string() }));
     }
 
     let repo = git_ops::open_repo(&paths.registry)
@@ -20,10 +19,7 @@ pub fn run(auto: bool, quiet: bool) -> Result<()> {
 
     // Check that an origin remote exists before attempting to push.
     if repo.find_remote("origin").is_err() {
-        bail!(
-            "No remote named 'origin' in the registry repository.\n\
-             If this is a local-only registry, there is nothing to push."
-        );
+        bail!("{}", t!(Msg::PushNoOrigin));
     }
 
     // Check for local changes.
@@ -33,8 +29,9 @@ pub fn run(auto: bool, quiet: bool) -> Result<()> {
     if !has_changes {
         if !quiet {
             println!(
-                "{} Nothing to push — registry is clean.",
-                style("✓").green().bold()
+                "{} {}",
+                style("✓").green().bold(),
+                t!(Msg::PushNothingToPush)
             );
         }
         return Ok(());
@@ -52,9 +49,9 @@ pub fn run(auto: bool, quiet: bool) -> Result<()> {
 
     if !quiet {
         println!(
-            "{} Committing {} changed file(s)...",
+            "{} {}",
             style("→").cyan().bold(),
-            changed_files.len()
+            t!(Msg::PushCommitting { count: changed_files.len() })
         );
     }
 
@@ -62,8 +59,9 @@ pub fn run(auto: bool, quiet: bool) -> Result<()> {
 
     if !quiet {
         println!(
-            "{} Pushing to origin...",
-            style("↑").cyan().bold()
+            "{} {}",
+            style("↑").cyan().bold(),
+            t!(Msg::PushPushing)
         );
     }
 
@@ -71,12 +69,12 @@ pub fn run(auto: bool, quiet: bool) -> Result<()> {
 
     if !quiet {
         println!(
-            "{} Pushed {} change(s) to remote registry.",
+            "{} {}",
             style("✓").green().bold(),
-            changed_files.len()
+            t!(Msg::PushSuccess { count: changed_files.len() })
         );
         for f in &changed_files {
-            println!("  - {}", style(f).dim());
+            println!("{}", t!(Msg::PushCommitFile { file: f.clone() }));
         }
     }
 

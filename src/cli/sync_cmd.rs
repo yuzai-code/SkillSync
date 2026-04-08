@@ -1,18 +1,17 @@
 use anyhow::{bail, Context, Result};
 use console::style;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::claude::paths::SkillSyncPaths;
+use crate::i18n::Msg;
 use crate::registry::git_ops;
 
 pub fn run(quiet: bool) -> Result<()> {
     let paths = SkillSyncPaths::resolve().context("Failed to resolve SkillSync paths")?;
 
     if !paths.registry_exists() {
-        bail!(
-            "Registry not found at {}.\n\
-             Run `skillsync init` or `skillsync init --from <url>` first.",
-            paths.registry.display()
-        );
+        bail!("{}", t!(Msg::SyncRegistryNotFound { path: paths.registry.display().to_string() }));
     }
 
     let repo = git_ops::open_repo(&paths.registry)
@@ -20,24 +19,23 @@ pub fn run(quiet: bool) -> Result<()> {
 
     // Check that an origin remote exists.
     if repo.find_remote("origin").is_err() {
-        bail!(
-            "No remote named 'origin' in the registry repository.\n\
-             If this is a local-only registry, there is nothing to sync."
-        );
+        bail!("{}", t!(Msg::SyncNoOrigin));
     }
 
     if !quiet {
         println!(
-            "{} Syncing registry with remote...\n",
-            style("⟳").cyan().bold()
+            "{} {}",
+            style("⟳").cyan().bold(),
+            t!(Msg::SyncSyncing)
         );
     }
 
     // ---- Phase 1: Pull (fetch + merge) ------------------------------------
     if !quiet {
         println!(
-            "{} Fetching from origin...",
-            style("↓").cyan().bold()
+            "{} {}",
+            style("↓").cyan().bold(),
+            t!(Msg::SyncFetching)
         );
     }
 
@@ -47,40 +45,39 @@ pub fn run(quiet: bool) -> Result<()> {
     // Report pull result.
     if !merge.conflicts.is_empty() {
         eprintln!(
-            "{} Merge conflicts detected in {} file(s):",
+            "{} {}",
             style("✗").red().bold(),
-            merge.conflicts.len()
+            t!(Msg::SyncMergeConflicts { count: merge.conflicts.len() })
         );
         for path in &merge.conflicts {
-            eprintln!("  - {}", style(path).yellow());
+            eprintln!("{}", t!(Msg::SyncConflictFile { file: path.clone() }));
         }
-        eprintln!(
-            "\nResolve conflicts manually, then run `skillsync resolve`."
-        );
-        bail!(
-            "Sync aborted due to merge conflicts. Run 'skillsync resolve' to fix them, then retry."
-        );
+        eprintln!("{}", t!(Msg::SyncResolveHint));
+        bail!("{}", t!(Msg::SyncAborted));
     }
 
     if merge.up_to_date {
         if !quiet {
             println!(
-                "{} Already up to date with remote.",
-                style("✓").green().bold()
+                "{} {}",
+                style("✓").green().bold(),
+                t!(Msg::SyncUpToDate)
             );
         }
     } else if merge.fast_forward {
         if !quiet {
             println!(
-                "{} Fast-forwarded to latest remote changes.",
-                style("✓").green().bold()
+                "{} {}",
+                style("✓").green().bold(),
+                t!(Msg::SyncFastForwarded)
             );
         }
     } else {
         if !quiet {
             println!(
-                "{} Merged remote changes successfully.",
-                style("✓").green().bold()
+                "{} {}",
+                style("✓").green().bold(),
+                t!(Msg::SyncMerged)
             );
         }
     }
@@ -92,12 +89,14 @@ pub fn run(quiet: bool) -> Result<()> {
     if !has_changes {
         if !quiet {
             println!(
-                "{} No local changes to push.",
-                style("✓").green().bold()
+                "{} {}",
+                style("✓").green().bold(),
+                t!(Msg::SyncNoLocalChanges)
             );
             println!(
-                "\n{} Sync complete.",
-                style("✓").green().bold()
+                "{} {}",
+                style("✓").green().bold(),
+                t!(Msg::SyncComplete)
             );
         }
         return Ok(());
@@ -105,9 +104,9 @@ pub fn run(quiet: bool) -> Result<()> {
 
     if !quiet {
         println!(
-            "\n{} Pushing {} local change(s)...",
+            "{} {}",
             style("↑").cyan().bold(),
-            changed_files.len()
+            t!(Msg::SyncPushing { count: changed_files.len() })
         );
     }
 
@@ -118,16 +117,17 @@ pub fn run(quiet: bool) -> Result<()> {
 
     if !quiet {
         println!(
-            "{} Pushed {} change(s) to remote.",
+            "{} {}",
             style("✓").green().bold(),
-            changed_files.len()
+            t!(Msg::SyncPushed { count: changed_files.len() })
         );
         for f in &changed_files {
-            println!("  - {}", style(f).dim());
+            println!("{}", t!(Msg::SyncCommitFile { file: f.clone() }));
         }
         println!(
-            "\n{} Sync complete.",
-            style("✓").green().bold()
+            "{} {}",
+            style("✓").green().bold(),
+            t!(Msg::SyncComplete)
         );
     }
 

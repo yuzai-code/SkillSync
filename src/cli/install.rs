@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use anyhow::{bail, Context, Result};
 use console::style;
 
+#[allow(unused_imports)]
+use crate::t;
 use crate::claude::paths::{ClaudePaths, ProjectPaths, SkillSyncPaths};
+use crate::i18n::Msg;
 use crate::installer::mcp_installer::merge_mcp_config;
 use crate::installer::settings_merger::{write_lock_file, LockEntry};
 use crate::installer::skill_installer::{
@@ -99,14 +102,17 @@ fn build_mcp_lock_entries(
 /// servers from the registry manifest.
 fn run_global(ss_paths: &SkillSyncPaths) -> Result<()> {
     let manifest = Manifest::load(&ss_paths.manifest)
-        .context("Failed to load manifest. Have you run 'skillsync init'?")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
-    let claude = ClaudePaths::global().context("Failed to resolve global Claude paths")?;
-    claude.ensure_dirs().context("Failed to create global Claude directories")?;
+    let claude = ClaudePaths::global()
+        .with_context(|| t!(Msg::ContextResolvePaths))?;
+    claude.ensure_dirs()
+        .with_context(|| t!(Msg::ContextCreateDir { path: claude.home.display().to_string() }))?;
 
     println!(
-        "{} Installing global resources...",
-        style("→").cyan().bold()
+        "{} {}",
+        style("→").cyan().bold(),
+        t!(Msg::InstallGlobal)
     );
 
     // --- Skills ---
@@ -126,16 +132,15 @@ fn run_global(ss_paths: &SkillSyncPaths) -> Result<()> {
         merge_mcp_config(&global_mcp, &claude.mcp_json)
             .context("Failed to merge global MCP config")?;
         println!(
-            "  {} {} MCP server(s) merged into {}",
-            style("+").green(),
-            global_mcp.len(),
-            style(claude.mcp_json.display().to_string()).dim()
+            "  {}",
+            t!(Msg::InstallMcpMerged { count: global_mcp.len(), path: claude.mcp_json.display().to_string() })
         );
     }
 
     println!(
-        "{} Global install complete.",
-        style("✓").green().bold()
+        "{} {}",
+        style("✓").green().bold(),
+        t!(Msg::InstallGlobalComplete)
     );
 
     Ok(())
@@ -144,29 +149,30 @@ fn run_global(ss_paths: &SkillSyncPaths) -> Result<()> {
 /// `skillsync install` (no flags) — read the project's `.claude/skillsync.yaml`
 /// and install all declared resources.
 fn run_project(ss_paths: &SkillSyncPaths) -> Result<()> {
-    let cwd = std::env::current_dir().context("Failed to determine current directory")?;
+    let cwd = std::env::current_dir()
+        .with_context(|| t!(Msg::ContextCurrentDir))?;
     let project = ProjectPaths::new(&cwd);
 
     if !project.has_config() {
         bail!(
-            "No skillsync.yaml found at {}\n\
-             Run 'skillsync use' to configure this project, or create the file manually.",
-            project.skillsync_yaml.display()
+            "{}",
+            t!(Msg::InstallNoConfig { path: project.skillsync_yaml.display().to_string() })
         );
     }
 
     let config = SkillSyncConfig::load(&project.skillsync_yaml)
-        .context("Failed to load project skillsync.yaml")?;
+        .with_context(|| t!(Msg::InstallNoConfig { path: project.skillsync_yaml.display().to_string() }))?;
 
     let manifest = Manifest::load(&ss_paths.manifest)
-        .context("Failed to load manifest. Have you run 'skillsync init'?")?;
+        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
 
-    project.ensure_dirs().context("Failed to create project directories")?;
+    project.ensure_dirs()
+        .with_context(|| t!(Msg::ContextCreateDir { path: project.root.display().to_string() }))?;
 
     println!(
-        "{} Installing resources for project at {}",
+        "{} {}",
         style("→").cyan().bold(),
-        style(cwd.display().to_string()).dim()
+        t!(Msg::InstallProject { path: cwd.display().to_string() })
     );
 
     let mut all_lock_entries: Vec<LockEntry> = Vec::new();
@@ -203,9 +209,8 @@ fn run_project(ss_paths: &SkillSyncPaths) -> Result<()> {
         for name in &config.mcp {
             if !manifest.mcp_servers.contains_key(name) {
                 eprintln!(
-                    "  {} MCP server '{}' not found in registry manifest — skipping",
-                    style("⚠").yellow().bold(),
-                    name
+                    "  {}",
+                    t!(Msg::InstallMcpNotFound { name: name.clone() })
                 );
             }
         }
@@ -214,10 +219,8 @@ fn run_project(ss_paths: &SkillSyncPaths) -> Result<()> {
             merge_mcp_config(&mcp_servers, &project.mcp_json)
                 .context("Failed to merge project MCP config")?;
             println!(
-                "  {} {} MCP server(s) merged into {}",
-                style("+").green(),
-                mcp_servers.len(),
-                style(project.mcp_json.display().to_string()).dim()
+                "  {}",
+                t!(Msg::InstallMcpMerged { count: mcp_servers.len(), path: project.mcp_json.display().to_string() })
             );
 
             let installed_names: Vec<String> = mcp_servers.keys().cloned().collect();
@@ -230,15 +233,15 @@ fn run_project(ss_paths: &SkillSyncPaths) -> Result<()> {
         write_lock_file(&all_lock_entries, &project.skillsync_lock)
             .context("Failed to write lock file")?;
         println!(
-            "  {} Lock file written to {}",
-            style("✓").green(),
-            style(project.skillsync_lock.display().to_string()).dim()
+            "  {}",
+            t!(Msg::InstallLockWritten { path: project.skillsync_lock.display().to_string() })
         );
     }
 
     println!(
-        "{} Project install complete.",
-        style("✓").green().bold()
+        "{} {}",
+        style("✓").green().bold(),
+        t!(Msg::InstallProjectComplete)
     );
 
     Ok(())
@@ -249,9 +252,8 @@ pub fn run(global: bool) -> Result<()> {
 
     if !ss_paths.registry_exists() {
         bail!(
-            "SkillSync registry not found at {}\n\
-             Run 'skillsync init' to create one, or 'skillsync init --from <url>' to clone.",
-            ss_paths.registry.display()
+            "{}",
+            t!(Msg::SyncRegistryNotFound { path: ss_paths.registry.display().to_string() })
         );
     }
 

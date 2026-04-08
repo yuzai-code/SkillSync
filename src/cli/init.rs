@@ -4,11 +4,12 @@ use std::path::PathBuf;
 use anyhow::{bail, Context, Result};
 use console::style;
 use git2::Repository;
+use inquire::Select;
 
 #[allow(unused_imports)]
 use crate::t;
 use crate::claude::paths::ClaudePaths;
-use crate::i18n::Msg;
+use crate::i18n::{Lang, Msg};
 use crate::registry::manifest::Manifest;
 
 /// Return the default registry path: `~/.skillsync/registry/`.
@@ -25,6 +26,15 @@ fn init_new(quiet: bool) -> Result<()> {
     if reg.exists() {
         bail!("{}", t!(Msg::InitRegistryExists { path: reg.display().to_string() }));
     }
+
+    // Prompt language selection if SKILLSYNC_LANG is not set.
+    let lang = if std::env::var_os("SKILLSYNC_LANG").is_none() {
+        let lang = prompt_language_selection()?;
+        lang.save_preference()?;
+        lang
+    } else {
+        crate::i18n::lang()
+    };
 
     // Create directory structure.
     let dirs = [
@@ -54,9 +64,25 @@ fn init_new(quiet: bool) -> Result<()> {
             style("✓").green().bold(),
             t!(Msg::InitSuccess { path: reg.display().to_string() })
         );
+        println!(
+            "  {}",
+            t!(Msg::InitLanguageSet { lang: lang.tag().to_string() })
+        );
     }
 
     Ok(())
+}
+
+/// Prompt the user to select their preferred language.
+fn prompt_language_selection() -> Result<Lang> {
+    let prompt = t!(Msg::InitLanguageSelect);
+    let options = ["English", "中文"];
+    let selection = Select::new(&prompt, options.to_vec()).prompt()?;
+    match selection {
+        "English" => Ok(Lang::En),
+        "中文" => Ok(Lang::Zh),
+        _ => Ok(Lang::En),
+    }
 }
 
 /// `skillsync init --from <url>` — clone a remote registry and validate it.

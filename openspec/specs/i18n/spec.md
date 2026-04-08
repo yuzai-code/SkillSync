@@ -3,8 +3,9 @@
 ### Requirement: Language detection
 系统 SHALL 按以下优先级检测语言：
 1. 环境变量 `SKILLSYNC_LANG`（值为 `zh` 或 `en`）
-2. 系统环境变量 `LANG` 或 `LC_ALL`（包含 `zh` 则为中文）
-3. 默认为 `en`
+2. `~/.skillsync/.lang` 配置文件（首次 `skillsync init` 时交互式生成）
+3. 系统环境变量 `LANG` 或 `LC_ALL`（包含 `zh` 则为中文）
+4. 默认为 `en`
 
 语言检测 SHALL 在程序启动时执行一次，结果缓存供后续所有输出使用。
 
@@ -23,6 +24,11 @@
 #### Scenario: Default to English
 - **WHEN** `SKILLSYNC_LANG` 未设置且系统 `LANG` 不包含 `zh`
 - **THEN** 所有用户可见输出 SHALL 使用英文
+
+#### Scenario: Interactive language selection during init
+- **WHEN** 用户首次运行 `skillsync init` 且 `SKILLSYNC_LANG` 未设置
+- **THEN** 系统显示语言选择提示 "请选择您偏好的语言："（中文）或 "Select your preferred language:"（英文）
+- **AND** 用户选择后，语言偏好保存至 `~/.skillsync/.lang`
 
 ### Requirement: Translation macro
 系统 SHALL 提供 `t!()` 宏用于获取当前语言的翻译文本。宏接受一个消息键枚举值，返回对应语言的 `String`。

@@ -137,20 +137,20 @@ skillsync doctor
 
 ### 语言切换
 
-SkillSync 支持中文和英文界面。通过环境变量控制：
+SkillSync 支持中文和英文界面。
+
+首次运行 `skillsync init` 时会交互式选择语言偏好，之后的语言检测优先级：
+
+1. `SKILLSYNC_LANG` 环境变量（`zh` 或 `en`）
+2. `~/.skillsync/.lang` 配置文件（`skillsync init` 时生成）
+3. 系统 `LANG` / `LC_ALL` 环境变量（包含 `zh` 则为中文）
+4. 默认为英文
 
 ```bash
-# 使用中文界面
+# 手动切换语言
 SKILLSYNC_LANG=zh skillsync doctor
-
-# 使用英文界面
 SKILLSYNC_LANG=en skillsync doctor
 ```
-
-语言检测优先级：
-1. `SKILLSYNC_LANG` 环境变量（`zh` 或 `en`）
-2. 系统 `LANG` / `LC_ALL` 环境变量（包含 `zh` 则为中文）
-3. 默认为英文
 
 ## 配置文件
 

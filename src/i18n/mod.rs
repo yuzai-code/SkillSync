@@ -1,7 +1,7 @@
 //! i18n — Internationalization support for SkillSync.
 //!
 //! Provides language detection and translation for all user-visible messages.
-//! Language priority: `SKILLSYNC_LANG` env var → system `LANG`/`LC_ALL` → default `en`.
+//! Language priority: `SKILLSYNC_LANG` env var → `~/.skillsync/.lang` → system `LANG`/`LC_ALL` → default `en`.
 
 use std::sync::OnceLock;
 
@@ -17,12 +17,13 @@ pub enum Lang {
 }
 
 impl Lang {
-    /// Detect the current language from environment.
+    /// Detect the current language from environment and config file.
     ///
     /// Priority:
     /// 1. `SKILLSYNC_LANG` env var (`zh` or `en`)
-    /// 2. System `LANG` / `LC_ALL` env vars (contains `zh` → `zh`)
-    /// 3. Default: `en`
+    /// 2. `~/.skillsync/.lang` config file
+    /// 3. System `LANG` / `LC_ALL` env vars (contains `zh` → `zh`)
+    /// 4. Default: `en`
     pub fn detect() -> Lang {
         if let Some(val) = std::env::var_os("SKILLSYNC_LANG") {
             if let Some(s) = val.to_str() {
@@ -31,6 +32,19 @@ impl Lang {
                     return Lang::Zh;
                 }
                 if s == "en" {
+                    return Lang::En;
+                }
+            }
+        }
+
+        if let Some(home) = dirs::home_dir() {
+            let lang_file = home.join(".skillsync").join(".lang");
+            if let Ok(content) = std::fs::read_to_string(&lang_file) {
+                let content = content.trim().to_lowercase();
+                if content == "zh" {
+                    return Lang::Zh;
+                }
+                if content == "en" {
                     return Lang::En;
                 }
             }
@@ -55,6 +69,15 @@ impl Lang {
             Lang::En => "en",
             Lang::Zh => "zh",
         }
+    }
+
+    /// Save the language preference to `~/.skillsync/.lang`.
+    pub fn save_preference(self) -> std::io::Result<()> {
+        if let Some(home) = dirs::home_dir() {
+            let path = home.join(".skillsync").join(".lang");
+            std::fs::write(path, self.tag())?;
+        }
+        Ok(())
     }
 }
 
@@ -89,6 +112,8 @@ pub enum Msg {
     // ── cli::init ──────────────────────────────────────────────────────────
     InitRegistryExists { path: String },
     InitSuccess { path: String },
+    InitLanguageSelect,
+    InitLanguageSet { lang: String },
     InitCloned { url: String },
     InitScanResult { skills: usize, plugins: usize, mcp: usize, profiles: usize },
     InitScanSkillsError { error: String },
@@ -416,6 +441,8 @@ impl Msg {
 
             Msg::InitRegistryExists { path } => format!("Registry already exists at {}\nUse `skillsync sync` to update, or remove the directory to start fresh.", path),
             Msg::InitSuccess { path } => format!("Initialized new SkillSync registry at {}", path),
+            Msg::InitLanguageSelect => "Select your preferred language:".into(),
+            Msg::InitLanguageSet { lang } => format!("Language set to {}. This can be changed via SKILLSYNC_LANG env var.", lang),
             Msg::InitCloned { url } => format!("Cloned SkillSync registry from {}", url),
             Msg::InitScanResult { skills, plugins, mcp, profiles } => format!("{} skill(s), {} plugin(s), {} MCP server(s), {} profile(s)", skills, plugins, mcp, profiles),
             Msg::InitScanSkillsError { error } => format!("Could not scan skills: {}", error),
@@ -717,6 +744,8 @@ impl Msg {
 
             Msg::InitRegistryExists { path } => format!("Registry 已存在：{}\n使用 `skillsync sync` 更新，或删除该目录后重新初始化。", path),
             Msg::InitSuccess { path } => format!("已初始化 SkillSync registry：{}", path),
+            Msg::InitLanguageSelect => "请选择您偏好的语言：".into(),
+            Msg::InitLanguageSet { lang } => format!("语言已设置为 {}。可通过 SKILLSYNC_LANG 环境变量修改。", lang),
             Msg::InitCloned { url } => format!("已克隆 SkillSync registry：{}", url),
             Msg::InitScanResult { skills, plugins, mcp, profiles } => format!("{} 个 skill、{} 个 plugin、{} 个 MCP server、{} 个 profile", skills, plugins, mcp, profiles),
             Msg::InitScanSkillsError { error } => format!("扫描 skills 失败：{}", error),

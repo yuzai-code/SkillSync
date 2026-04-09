@@ -1,10 +1,14 @@
 use anyhow::{bail, Context, Result};
 use console::style;
+use std::fs;
 
+use crate::claude::paths::ClaudePaths;
 use crate::i18n::Msg;
 #[allow(unused_imports)]
 use crate::t;
 use crate::registry::Manifest;
+
+#[allow(dead_code)]
 
 /// Resolve the manifest path: `~/.skillsync/registry/manifest.yaml`
 fn manifest_path() -> Result<std::path::PathBuf> {
@@ -30,8 +34,21 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
     }
 
     let path = manifest_path()?;
-    let manifest = Manifest::load(&path)
-        .with_context(|| t!(Msg::ContextFailedToLoadManifest))?;
+
+    // Try to load manifest; if registry doesn't exist, scan local skills.
+    let manifest = match Manifest::load(&path) {
+        Ok(m) => m,
+        Err(_) => {
+            // Registry not initialized — scan local skills as fallback.
+            if type_filter.is_none() || type_filter == Some("skill") {
+                list_local_skills()?;
+            } else {
+                println!("{}", t!(Msg::ListNoResources));
+                println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync init".to_string() }));
+            }
+            return Ok(());
+        }
+    };
 
     let mut rows: Vec<TableRow> = Vec::new();
 
@@ -77,10 +94,12 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
         } else {
             println!("{}", t!(Msg::ListNoResources));
         }
-        println!(
-            "{}",
-            t!(Msg::ListUseAddHint { cmd: "skillsync add".to_string() })
-        );
+        // Also scan local skills when registry is empty.
+        if type_filter.is_none() || type_filter == Some("skill") {
+            list_local_skills()?;
+        } else {
+            println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync add".to_string() }));
+        }
         return Ok(());
     }
 
@@ -130,6 +149,42 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
         "  {}",
         t!(Msg::ListTotal { count: rows.len() })
     );
+
+    Ok(())
+}
+
+/// Scan `~/.claude/skills/` for skills not managed by registry.
+fn list_local_skills() -> Result<()> {
+    let claude = ClaudePaths::global()?;
+
+    if !claude.skills_dir.is_dir() {
+        println!("{}", t!(Msg::ListNoResources));
+        println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync init".to_string() }));
+        return Ok(());
+    }
+
+    let entries: Vec<_> = fs::read_dir(&claude.skills_dir)?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_dir())
+        .collect();
+
+    if entries.is_empty() {
+        println!("{}", t!(Msg::ListNoResources));
+        println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync init".to_string() }));
+        return Ok(());
+    }
+
+    println!("{}", t!(Msg::ListLocalSkillsFound { count: entries.len() }));
+    println!();
+
+    for entry in &entries {
+        if let Some(name) = entry.file_name().to_str() {
+            println!("  {}", name);
+        }
+    }
+
+    println!();
+    println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync add".to_string() }));
 
     Ok(())
 }

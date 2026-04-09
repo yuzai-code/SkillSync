@@ -35,6 +35,7 @@ cargo fmt                    # 格式化代码
 - **`state/`** — SQLite 状态数据库（`db.rs`），`StateDb` 跟踪已安装资源和同步历史。
 - **`tui/`** — 交互式选择器（`inquire` crate）。`selector.rs` 多选/单选资源，`profile_picker.rs` Profile 选择，`diff_viewer.rs` 冲突差异查看。
 - **`watcher/`** — 文件系统监控（`notify` crate）。`fs_watcher.rs` 实现 2 秒防抖监控和自动 push。
+- **`i18n/`** — 国际化模块。`Lang` 枚举支持中英文，`Msg` 枚举包含 140+ 消息键，`t!()` 宏返回当前语言对应的翻译字符串。语言检测优先级：`SKILLSYNC_LANG` → `~/.skillsync/.lang` → 系统 locale → 默认英文。
 
 ### 核心数据流
 
@@ -68,7 +69,7 @@ cargo fmt                    # 格式化代码
 
 ## 测试
 
-项目有 125 个测试（113 单元 + 12 集成），全部通过：
+项目有 117 个测试（105 单元 + 12 集成），全部通过：
 
 - `registry/manifest.rs` — 20 个测试，覆盖解析、验证、序列化边界情况
 - `registry/resource.rs` — 5 个测试，覆盖哈希和复制
@@ -87,8 +88,8 @@ cargo fmt                    # 格式化代码
 
 本项目使用 OpenSpec 进行 spec 驱动开发。设计文档和详细 spec 在 `openspec/` 目录：
 
-- `openspec/specs/` — 主 specs（6 个 capability）
-- `openspec/changes/archive/` — 已归档的 change（skillsync-cli，61 个任务全部完成）
+- `openspec/specs/` — 主 specs（7 个 capability：registry-management、interactive-selector、sync-engine、doctor、profiles、i18n、hooks-integration）
+- `openspec/changes/archive/` — 已归档的 change
 
 ## 开发注意事项
 
@@ -98,3 +99,4 @@ cargo fmt                    # 格式化代码
 - 交互式 UI 使用 `inquire` crate（Select/MultiSelect/Confirm）
 - Git 操作使用 `git2` crate，SSH 认证通过 ssh-agent
 - 回复和输出使用中文
+- `init` 命令首次运行时会交互式选择语言（中文/English），语言偏好保存至 `~/.skillsync/.lang`

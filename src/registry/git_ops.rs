@@ -31,6 +31,7 @@ pub fn open_repo(path: &Path) -> Result<Repository> {
 }
 
 /// Open an existing bare git repository at `path`.
+#[allow(dead_code)]
 pub fn open_bare_repo(path: &Path) -> Result<Repository> {
     Repository::open_bare(path)
         .with_context(|| format!("Failed to open bare git repository at {}", path.display()))
@@ -390,6 +391,7 @@ pub fn push_origin(repo: &Repository) -> Result<()> {
 ///
 /// For each conflicting file, compares commit timestamps and keeps the newer version.
 /// Returns the list of resolved file paths.
+#[allow(dead_code)]
 pub fn resolve_conflicts_lww(repo: &Repository) -> Result<Vec<String>> {
     let mut index = repo.index().context("Failed to get repository index")?;
 

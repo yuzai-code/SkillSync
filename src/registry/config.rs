@@ -75,11 +75,13 @@ impl GlobalConfig {
     }
 
     /// Set the registry remote URL.
+    #[allow(dead_code)]
     pub fn set_registry_remote(&mut self, url: String) {
         self.registry_remote = Some(url);
     }
 
     /// Check if auto-sync is enabled.
+    #[allow(dead_code)]
     pub fn is_auto_sync_enabled(&self) -> bool {
         self.auto_sync
     }

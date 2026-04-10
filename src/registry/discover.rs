@@ -39,6 +39,7 @@ pub struct DiscoveredPlugin {
     /// Marketplace identifier.
     pub marketplace: String,
     /// Source type (github, npm, etc.).
+    #[allow(dead_code)]
     pub source: String,
 }
 
@@ -61,6 +62,7 @@ pub struct DiscoveredMcp {
 #[derive(Debug, Deserialize)]
 struct ClaudeSettings {
     #[serde(default)]
+    #[allow(dead_code)]
     enabled_plugins: HashMap<String, bool>,
     #[serde(default, rename = "enabledPlugins")]
     enabled_plugins_v2: HashMap<String, bool>,
@@ -79,6 +81,7 @@ struct MarketplaceSource {
     #[serde(default, rename = "source")]
     source_type: Option<String>,
     #[serde(default)]
+    #[allow(dead_code)]
     repo: Option<String>,
 }
 
@@ -446,6 +449,7 @@ pub fn register_discovered_skills(
 }
 
 /// Get list of project paths that have .claude/skills/ directories.
+#[allow(dead_code)]
 pub fn get_project_skills_dirs() -> Result<Vec<PathBuf>> {
     let project_dirs = get_project_dirs()?;
 

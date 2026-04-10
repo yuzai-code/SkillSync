@@ -348,6 +348,7 @@ pub struct RemoteSkillItem {
     /// Source project path (where the skill was discovered from).
     pub source_project: String,
     /// Description if available.
+    #[allow(dead_code)]
     pub description: Option<String>,
 }
 
@@ -426,6 +427,7 @@ pub fn select_install_scope() -> Result<InstallScope> {
 // ---------------------------------------------------------------------------
 
 /// A project entry for the project picker.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct ProjectItem {
     /// Project name (directory name).
@@ -441,6 +443,7 @@ impl fmt::Display for ProjectItem {
 }
 
 /// Present a single-select prompt for target project.
+#[allow(dead_code)]
 pub fn select_target_project(projects: &[ProjectItem]) -> Result<String> {
     if projects.is_empty() {
         println!("{}", style(t!(Msg::SelectorProjectPickerEmpty)).yellow());
@@ -461,6 +464,7 @@ pub fn select_target_project(projects: &[ProjectItem]) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 /// Display a dry-run preview of what would be installed.
+#[allow(dead_code)]
 pub fn show_dry_run_preview(skills: &[String], target: &str) -> Result<()> {
     println!();
     println!("{}", style(t!(Msg::SelectorDryRunHeader)).bold().cyan());

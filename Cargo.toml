@@ -49,8 +49,8 @@ unicode-width = "0.2.2"
 # Version management
 semver = "1"
 
-# HTTP client
-ureq = "2"
+# HTTP client (use rustls for cross-compilation compatibility)
+ureq = { version = "2", features = ["tls"], default-features = false }
 
 [dev-dependencies]
 tempfile = "3"

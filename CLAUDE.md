@@ -99,17 +99,29 @@ cargo fmt                    # 格式化代码
 - 彩色输出使用 `console::style()`
 - 交互式 UI 使用 `inquire` crate（Select/MultiSelect/Confirm）
 - Git 操作使用 `git2` crate，SSH 认证通过 ssh-agent
+- 中英文混合输出使用 `unicode-width` crate 计算列宽（CJK 字符宽度为 2）
 - 回复和输出使用中文
 - `init` 命令首次运行时会交互式选择语言（中文/English），语言偏好保存至 `~/.skillsync/.lang`
 
 ## Auto-Discovery
 
-`sync` 命令自动发现本地 skills，扫描以下目录：
+`sync` 命令自动发现本地资源，扫描以下来源：
+
+**Skills:**
 - `~/.claude/skills/` — 全局 skills
 - `~/projects/` — 标准项目目录
 - `~/Desktop/project/` — 替代项目目录
 
-`list` 和 `use` 命令会显示每个 skill 的来源（global 或 project: xxx）。
-`manifest.yaml` 中的 `source_path` 字段记录 skill 的原始路径。
+**Plugins:**
+- `~/.claude/settings.json` — 从 `enabledPlugins` 读取已启用的插件
+
+**MCP Servers:**
+- `~/.claude/.mcp.json` — 从 `mcpServers` 读取配置
+
+`list` 命令按类型分组显示（Skills → Plugins → MCP Servers），来源颜色区分：
+- `global` (绿) — 全局 skills
+- `project: xxx` (青) — 项目级 skills
+- `marketplace` (紫) — 插件市场安装
+- `config` (黄) — MCP 配置文件
 
 非交互环境使用 `skillsync sync --skip-select` 跳过 TUI 选择。

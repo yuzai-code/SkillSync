@@ -19,8 +19,8 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 serde_json = "1"
 
-# Git
-git2 = "0.19"
+# Git (use vendored for cross-compilation compatibility)
+git2 = { version = "0.19", features = ["vendored-libgit2", "vendored-openssl"] }
 
 # File watching
 notify = "7"

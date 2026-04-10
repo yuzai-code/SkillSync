@@ -51,7 +51,7 @@ pub fn run() -> Result<()> {
     };
 
     // 4. Preview and confirm.
-    let confirmed = selector::confirm_preview(&selected)?;
+    let confirmed = selector::confirm_preview(&selected, &manifest)?;
     if !confirmed {
         println!("{}", style(t!(Msg::UseCancelled)).yellow());
         return Ok(());

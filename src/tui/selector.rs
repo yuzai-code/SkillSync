@@ -1,7 +1,8 @@
 // Multi-select / single-select resource selector
-// Implements: tasks 4.1, 4.3, 4.4
+// Implements: tasks 4.1, 4.3, 4.4, 6.1-6.4
 
 use std::fmt;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use console::style;
@@ -12,6 +13,44 @@ use crate::registry::Manifest;
 
 #[allow(unused_imports)]
 use crate::t;
+
+/// Extract source location from source_path.
+/// Returns "global" for ~/.claude/skills/ or "project: <name>" for project skills.
+fn extract_source(source_path: Option<&str>) -> String {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return "unknown".to_string(),
+    };
+
+    let path = match source_path {
+        Some(p) => PathBuf::from(p),
+        None => return "unknown".to_string(),
+    };
+
+    // Check if it's a global skill (~/.claude/skills/<name>)
+    let global_skills_prefix = home.join(".claude").join("skills");
+    if path.starts_with(&global_skills_prefix) {
+        return "global".to_string();
+    }
+
+    // Extract project name from path
+    // Path format: ~/.../<project>/.claude/skills/<name>
+    // Walk up to find .claude directory, then get parent (project name)
+    let mut current = path.as_path();
+    while let Some(parent) = current.parent() {
+        if parent.file_name() == Some(std::ffi::OsStr::new(".claude")) {
+            if let Some(project_path) = parent.parent() {
+                if let Some(project_name) = project_path.file_name().and_then(|n| n.to_str()) {
+                    return format!("project: {}", project_name);
+                }
+            }
+            break;
+        }
+        current = parent;
+    }
+
+    "unknown".to_string()
+}
 
 // ---------------------------------------------------------------------------
 // ConfigMethod (4.1)
@@ -120,11 +159,12 @@ fn build_resource_options(manifest: &Manifest) -> Vec<ResourceOption> {
             crate::registry::ResourceScope::Global => "global",
             crate::registry::ResourceScope::Shared => "shared",
         };
+        let source = extract_source(entry.source_path.as_deref());
         let desc = entry
             .description
             .as_deref()
             .unwrap_or("n/a");
-        let label = format!("[skill]  {} ({}) — {}", name, scope_tag, desc);
+        let label = format!("[skill]  {} ({}) [{}] — {}", name, scope_tag, style(&source).dim(), desc);
         options.push(ResourceOption {
             label,
             name: name.clone(),
@@ -227,7 +267,7 @@ pub fn select_resources(
 // ---------------------------------------------------------------------------
 
 /// Display a summary of selected resources and ask for confirmation.
-pub fn confirm_preview(selected: &SelectedResources) -> Result<bool> {
+pub fn confirm_preview(selected: &SelectedResources, manifest: &Manifest) -> Result<bool> {
     println!();
     println!("{}", style(t!(Msg::SelectorPreviewHeader)).bold().cyan());
     println!();
@@ -235,7 +275,15 @@ pub fn confirm_preview(selected: &SelectedResources) -> Result<bool> {
     if !selected.skills.is_empty() {
         println!("  {} {}", style(selected.skills.len()).green().bold(), t!(Msg::SelectorSkillsLabel));
         for name in &selected.skills {
-            println!("    {} {}", style("+").green(), name);
+            let source = manifest.skills.get(name)
+                .map(|e| extract_source(e.source_path.as_deref()))
+                .unwrap_or_else(|| "unknown".to_string());
+            let source_display = if source == "global" {
+                style(&source).green().to_string()
+            } else {
+                style(&source).cyan().to_string()
+            };
+            println!("    {} {} [{}]", style("+").green(), name, source_display);
         }
     }
 
@@ -280,4 +328,153 @@ pub fn confirm_preview(selected: &SelectedResources) -> Result<bool> {
         .with_context(|| t!(Msg::SelectorConfirmCancelled))?;
 
     Ok(confirmed)
+}
+
+// ---------------------------------------------------------------------------
+// Remote Skills Selection (6.1-6.4)
+// ---------------------------------------------------------------------------
+
+/// A skill entry from remote registry, ready for selection.
+#[derive(Debug, Clone)]
+pub struct RemoteSkillItem {
+    /// Skill name.
+    pub name: String,
+    /// Source project path (where the skill was discovered from).
+    pub source_project: String,
+    /// Description if available.
+    pub description: Option<String>,
+}
+
+impl fmt::Display for RemoteSkillItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            t!(Msg::SelectorRemoteSkillItem {
+                name: self.name.clone(),
+                source: self.source_project.clone()
+            })
+        )
+    }
+}
+
+/// Present a multi-select prompt for remote skills.
+///
+/// Returns the selected skill names, or an empty vector if cancelled or none selected.
+pub fn select_remote_skills(skills: &[RemoteSkillItem]) -> Result<Vec<String>> {
+    if skills.is_empty() {
+        println!("{}", style(t!(Msg::SelectorRemoteSkillsEmpty)).yellow());
+        return Ok(Vec::new());
+    }
+
+    let prompt = t!(Msg::SelectorRemoteSkillsPrompt);
+    let selected = MultiSelect::new(&prompt, skills.to_vec())
+        .with_help_message("Type to filter, Space to toggle, Enter to confirm")
+        .with_page_size(15)
+        .prompt()
+        .with_context(|| t!(Msg::SelectorRemoteSkillsCancelled))?;
+
+    Ok(selected.iter().map(|s| s.name.clone()).collect())
+}
+
+// ---------------------------------------------------------------------------
+// Install Scope Selection (6.2)
+// ---------------------------------------------------------------------------
+
+/// Where to install selected skills.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InstallScope {
+    /// Install globally to ~/.claude/skills/
+    Global,
+    /// Install to a specific project.
+    Project { path: String },
+}
+
+impl fmt::Display for InstallScope {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            InstallScope::Global => write!(f, "{}", t!(Msg::SelectorInstallScopeGlobal)),
+            InstallScope::Project { .. } => write!(f, "{}", t!(Msg::SelectorInstallScopeProject)),
+        }
+    }
+}
+
+/// Present a single-select prompt for install scope.
+pub fn select_install_scope() -> Result<InstallScope> {
+    let options = vec![
+        InstallScope::Global,
+        InstallScope::Project { path: String::new() },
+    ];
+
+    let prompt = t!(Msg::SelectorInstallScopePrompt);
+    let choice = Select::new(&prompt, options)
+        .with_help_message("Use arrow keys to navigate, Enter to select")
+        .prompt()
+        .context(t!(Msg::SelectorInstallScopeCancelled))?;
+
+    Ok(choice)
+}
+
+// ---------------------------------------------------------------------------
+// Project Picker (6.3)
+// ---------------------------------------------------------------------------
+
+/// A project entry for the project picker.
+#[derive(Debug, Clone)]
+pub struct ProjectItem {
+    /// Project name (directory name).
+    pub name: String,
+    /// Full path to the project.
+    pub path: String,
+}
+
+impl fmt::Display for ProjectItem {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} ({})", self.name, self.path)
+    }
+}
+
+/// Present a single-select prompt for target project.
+pub fn select_target_project(projects: &[ProjectItem]) -> Result<String> {
+    if projects.is_empty() {
+        println!("{}", style(t!(Msg::SelectorProjectPickerEmpty)).yellow());
+        return Ok(String::new());
+    }
+
+    let prompt = t!(Msg::SelectorProjectPickerPrompt);
+    let choice = Select::new(&prompt, projects.to_vec())
+        .with_help_message("Use arrow keys to navigate, Enter to select")
+        .prompt()
+        .context(t!(Msg::SelectorProjectPickerCancelled))?;
+
+    Ok(choice.path)
+}
+
+// ---------------------------------------------------------------------------
+// Dry-Run Preview (6.4)
+// ---------------------------------------------------------------------------
+
+/// Display a dry-run preview of what would be installed.
+pub fn show_dry_run_preview(skills: &[String], target: &str) -> Result<()> {
+    println!();
+    println!("{}", style(t!(Msg::SelectorDryRunHeader)).bold().cyan());
+    println!();
+
+    if skills.is_empty() {
+        println!("  {}", style(t!(Msg::SelectorDryRunEmpty)).yellow());
+        return Ok(());
+    }
+
+    for name in skills {
+        println!(
+            "{}",
+            t!(Msg::SelectorDryRunSkill {
+                name: name.clone(),
+                target: target.to_string()
+            })
+        );
+    }
+
+    println!();
+    Ok(())
 }

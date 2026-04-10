@@ -1,8 +1,8 @@
+use std::path::PathBuf;
+
 use anyhow::{bail, Context, Result};
 use console::style;
-use std::fs;
 
-use crate::claude::paths::ClaudePaths;
 use crate::i18n::Msg;
 #[allow(unused_imports)]
 use crate::t;
@@ -16,12 +16,51 @@ fn manifest_path() -> Result<std::path::PathBuf> {
     Ok(home.join(".skillsync").join("registry").join("manifest.yaml"))
 }
 
+/// Extract source location from source_path.
+/// Returns "global" for ~/.claude/skills/ or "project: <name>" for project skills.
+fn extract_source(source_path: Option<&str>) -> String {
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return "unknown".to_string(),
+    };
+
+    let path = match source_path {
+        Some(p) => PathBuf::from(p),
+        None => return "unknown".to_string(),
+    };
+
+    // Check if it's a global skill (~/.claude/skills/<name>)
+    let global_skills_prefix = home.join(".claude").join("skills");
+    if path.starts_with(&global_skills_prefix) {
+        return "global".to_string();
+    }
+
+    // Extract project name from path
+    // Path format: ~/.../<project>/.claude/skills/<name>
+    // Walk up to find .claude directory, then get parent (project name)
+    let mut current = path.as_path();
+    while let Some(parent) = current.parent() {
+        if parent.file_name() == Some(std::ffi::OsStr::new(".claude")) {
+            if let Some(project_path) = parent.parent() {
+                if let Some(project_name) = project_path.file_name().and_then(|n| n.to_str()) {
+                    return format!("project: {}", project_name);
+                }
+            }
+            break;
+        }
+        current = parent;
+    }
+
+    "unknown".to_string()
+}
+
 /// A row in the output table.
 struct TableRow {
     name: String,
     resource_type: String,
     scope: String,
     version: String,
+    source: String,
 }
 
 pub fn run(type_filter: Option<&str>) -> Result<()> {
@@ -44,7 +83,7 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
                 list_local_skills()?;
             } else {
                 println!("{}", t!(Msg::ListNoResources));
-                println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync init".to_string() }));
+                println!("Run 'skillsync init' to initialize the registry.");
             }
             return Ok(());
         }
@@ -60,6 +99,7 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
                 resource_type: "skill".into(),
                 scope: format!("{:?}", entry.scope).to_lowercase(),
                 version: entry.version.clone(),
+                source: extract_source(entry.source_path.as_deref()),
             });
         }
     }
@@ -72,6 +112,7 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
                 resource_type: "plugin".into(),
                 scope: entry.marketplace.clone(),
                 version: entry.version.clone(),
+                source: "marketplace".to_string(),
             });
         }
     }
@@ -84,6 +125,7 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
                 resource_type: "mcp".into(),
                 scope: format!("{:?}", entry.scope).to_lowercase(),
                 version: entry.command.clone(),
+                source: "config".to_string(),
             });
         }
     }
@@ -98,7 +140,7 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
         if type_filter.is_none() || type_filter == Some("skill") {
             list_local_skills()?;
         } else {
-            println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync add".to_string() }));
+            println!("Use 'skillsync add' to register resources.");
         }
         return Ok(());
     }
@@ -115,28 +157,40 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
     let type_width = rows.iter().map(|r| r.resource_type.len()).max().unwrap_or(4).max(4);
     let scope_width = rows.iter().map(|r| r.scope.len()).max().unwrap_or(5).max(5);
     let version_width = rows.iter().map(|r| r.version.len()).max().unwrap_or(7).max(7);
+    let source_width = rows.iter().map(|r| r.source.len()).max().unwrap_or(6).max(6);
 
     // Print header.
     println!(
-        "  {:<name_w$}  {:<type_w$}  {:<scope_w$}  {:<ver_w$}",
+        "  {:<name_w$}  {:<type_w$}  {:<scope_w$}  {:<ver_w$}  {:<src_w$}",
         style(t!(Msg::ListColName)).bold().underlined(),
         style(t!(Msg::ListColType)).bold().underlined(),
         style(t!(Msg::ListColScope)).bold().underlined(),
         style(t!(Msg::ListColVersion)).bold().underlined(),
+        style("来源").bold().underlined(),
         name_w = name_width,
         type_w = type_width,
         scope_w = scope_width,
         ver_w = version_width,
+        src_w = source_width,
     );
 
     // Print rows.
     for row in &rows {
+        let source_display = if row.source == "global" {
+            style(&row.source).green().to_string()
+        } else if row.source.starts_with("project:") {
+            style(&row.source).cyan().to_string()
+        } else {
+            row.source.clone()
+        };
+
         println!(
-            "  {:<name_w$}  {:<type_w$}  {:<scope_w$}  {:<ver_w$}",
+            "  {:<name_w$}  {:<type_w$}  {:<scope_w$}  {:<ver_w$}  {}",
             row.name,
             row.resource_type,
             row.scope,
             row.version,
+            source_display,
             name_w = name_width,
             type_w = type_width,
             scope_w = scope_width,
@@ -153,38 +207,42 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-/// Scan `~/.claude/skills/` for skills not managed by registry.
+/// Scan all local skills (global + project-level) not managed by registry.
 fn list_local_skills() -> Result<()> {
-    let claude = ClaudePaths::global()?;
+    use crate::registry::discover::scan_all_local_skills;
 
-    if !claude.skills_dir.is_dir() {
-        println!("{}", t!(Msg::ListNoResources));
-        println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync init".to_string() }));
-        return Ok(());
-    }
-
-    let entries: Vec<_> = fs::read_dir(&claude.skills_dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().is_dir())
-        .collect();
-
-    if entries.is_empty() {
-        println!("{}", t!(Msg::ListNoResources));
-        println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync init".to_string() }));
-        return Ok(());
-    }
-
-    println!("{}", t!(Msg::ListLocalSkillsFound { count: entries.len() }));
-    println!();
-
-    for entry in &entries {
-        if let Some(name) = entry.file_name().to_str() {
-            println!("  {}", name);
+    let discovered = match scan_all_local_skills() {
+        Ok(s) => s,
+        Err(_) => {
+            println!("{}", t!(Msg::ListNoResources));
+            println!("Run 'skillsync init' to initialize the registry.");
+            return Ok(());
         }
+    };
+
+    if discovered.is_empty() {
+        println!("{}", t!(Msg::ListNoResources));
+        println!("Run 'skillsync init' to initialize the registry.");
+        return Ok(());
+    }
+
+    println!("{}", t!(Msg::ListLocalSkillsFound { count: discovered.len() }));
+    println!();
+
+    for skill in &discovered {
+        let location = if skill.project_path == dirs::home_dir().unwrap_or_default() {
+            "(global)".to_string()
+        } else {
+            let project_name = skill.project_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
+            format!("(project: {})", project_name)
+        };
+        println!("  {} {}", skill.name, style(location).dim());
     }
 
     println!();
-    println!("{}", t!(Msg::ListUseAddHint { cmd: "skillsync add".to_string() }));
+    println!("Use 'skillsync sync' to auto-discover and register these skills.");
 
     Ok(())
 }

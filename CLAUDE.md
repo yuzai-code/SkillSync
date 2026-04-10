@@ -125,3 +125,36 @@ cargo fmt                    # 格式化代码
 - `config` (黄) — MCP 配置文件
 
 非交互环境使用 `skillsync sync --skip-select` 跳过 TUI 选择。
+
+## Release & Self Update
+
+### 发布命令
+
+```bash
+skillsync release              # 发布 patch 版本（0.1.0 → 0.1.1）
+skillsync release --minor      # 发布 minor 版本（0.1.0 → 0.2.0）
+skillsync release --major      # 发布 major 版本（0.1.0 → 1.0.0）
+skillsync release --dry-run    # 预览发布操作
+```
+
+发布流程：
+1. 检查工作区是否 clean
+2. 读取并递增版本号
+3. 更新 `Cargo.toml`
+4. 生成 `CHANGELOG.md`
+5. 创建 git commit 和 tag
+6. 推送到 origin
+
+### 自更新命令
+
+```bash
+skillsync self update          # 检查并更新到最新版本
+sudo skillsync self update     # 权限不足时使用 sudo
+```
+
+更新流程：
+1. 查询 GitHub Releases API 获取最新版本
+2. 比较当前版本与最新版本
+3. 下载对应平台的二进制文件
+4. 验证 SHA256 checksum
+5. 替换当前可执行文件

@@ -16,6 +16,8 @@ pub mod search;
 pub mod update;
 pub mod install;
 pub mod remote;
+pub mod release;
+pub mod self_update;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -183,6 +185,26 @@ pub enum Commands {
         #[command(subcommand)]
         action: RemoteAction,
     },
+
+    /// Release a new version
+    Release {
+        /// Bump major version
+        #[arg(long)]
+        major: bool,
+        /// Bump minor version
+        #[arg(long)]
+        minor: bool,
+        /// Preview without making changes
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Self-management commands
+    #[command(name = "self")]
+    Self_ {
+        #[command(subcommand)]
+        action: SelfAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -232,6 +254,12 @@ pub enum RemoteAction {
     List {},
 }
 
+#[derive(Subcommand)]
+pub enum SelfAction {
+    /// Update to the latest version
+    Update {},
+}
+
 pub fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Init { from } => init::run(from, cli.quiet),
@@ -254,5 +282,9 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Watch { daemon, install, uninstall, pause, resume } => watch::run(daemon, install, uninstall, pause, resume),
         Commands::Hook { action } => hook::run(action),
         Commands::Remote { action } => remote::run(action, cli.quiet),
+        Commands::Release { major, minor, dry_run } => release::run(major, minor, dry_run),
+        Commands::Self_ { action } => match action {
+            SelfAction::Update {} => self_update::run(),
+        },
     }
 }

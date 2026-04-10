@@ -1,7 +1,7 @@
 // File system watcher for auto-sync
 // Implements: tasks 7.1-7.3
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -14,6 +14,7 @@ use crate::t;
 use crate::claude::paths::SkillSyncPaths;
 use crate::i18n::Msg;
 use crate::registry::git_ops;
+use crate::state::StateDb;
 
 /// Start watching the given directories for file changes.
 ///
@@ -102,6 +103,14 @@ pub fn auto_push() {
     }
 }
 
+/// Check if auto-sync is enabled in the global config.
+fn is_auto_sync_enabled() -> bool {
+    match crate::registry::config::GlobalConfig::load() {
+        Ok(config) => config.auto_sync,
+        Err(_) => true, // Default to enabled if config can't be read
+    }
+}
+
 /// Inner implementation of auto_push that returns Result for ergonomic error handling.
 fn auto_push_inner() -> Result<()> {
     let ss_paths = SkillSyncPaths::resolve()?;
@@ -111,6 +120,12 @@ fn auto_push_inner() -> Result<()> {
             "  {} Registry not initialized, skipping auto-push.",
             console::style("Warning:").yellow()
         );
+        return Ok(());
+    }
+
+    // Check if auto-sync is enabled
+    if !is_auto_sync_enabled() {
+        eprintln!("{}", t!(Msg::WatcherAutoSyncDisabled));
         return Ok(());
     }
 
@@ -124,7 +139,7 @@ fn auto_push_inner() -> Result<()> {
 
     eprintln!("{}", t!(Msg::WatcherStaging { count: changed_files.len() }));
 
-    git_ops::stage_all(&repo)?;
+    git_ops::stage_skills_only(&repo)?;
 
     let message = format!(
         "auto-sync: {} file(s) changed",
@@ -156,8 +171,9 @@ fn auto_push_inner() -> Result<()> {
 
 /// Collect the directories that should be watched.
 ///
-/// Returns the global skills directory (`~/.claude/skills/`) and the
-/// registry resources directory (`~/.skillsync/registry/resources/`).
+/// Returns the global skills directory (`~/.claude/skills/`), the
+/// registry resources directory (`~/.skillsync/registry/resources/`), and
+/// all discovered project skills directories.
 pub fn default_watch_dirs() -> Result<Vec<PathBuf>> {
     let mut dirs = Vec::new();
 
@@ -169,6 +185,37 @@ pub fn default_watch_dirs() -> Result<Vec<PathBuf>> {
     let ss_paths = SkillSyncPaths::resolve()?;
     if ss_paths.registry_exists() {
         dirs.push(ss_paths.resources);
+    }
+
+    // Project skills directories from state.db
+    if let Ok(project_dirs) = project_watch_dirs() {
+        dirs.extend(project_dirs);
+    }
+
+    Ok(dirs)
+}
+
+/// Collect project skills directories from the discovered projects in state.db.
+///
+/// Reads the `discovered_projects` table and returns the `.claude/skills/`
+/// path for each active project.
+pub fn project_watch_dirs() -> Result<Vec<PathBuf>> {
+    let ss_paths = SkillSyncPaths::resolve()?;
+    let db_path = &ss_paths.state_db;
+
+    if !db_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let db = StateDb::open(&db_path)?;
+    let projects = db.get_discovered_projects(false)?;
+
+    let mut dirs = Vec::new();
+    for project in projects {
+        let skills_dir = Path::new(&project.project_path).join(".claude").join("skills");
+        if skills_dir.is_dir() {
+            dirs.push(skills_dir);
+        }
     }
 
     Ok(dirs)

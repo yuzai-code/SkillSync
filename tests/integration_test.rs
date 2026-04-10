@@ -76,6 +76,7 @@ fn test_full_workflow_init_add_list_install() {
             tags: vec!["review".into(), "quality".into()],
             source: None,
             backup_hash: Some(hash.clone()),
+            source_path: None,
         },
     );
     manifest.save(&ss_paths.manifest).unwrap();
@@ -207,6 +208,7 @@ fn test_manifest_save_load_validate_cycle() {
             tags: vec!["test".into()],
             source: None,
             backup_hash: Some("sha256:abc".into()),
+            source_path: None,
         },
     );
 
@@ -529,6 +531,7 @@ fn test_profile_create_and_apply_workflow() {
             tags: vec![],
             source: None,
             backup_hash: None,
+            source_path: None,
         },
     );
     manifest.mcp_servers.insert(

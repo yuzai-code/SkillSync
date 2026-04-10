@@ -111,6 +111,7 @@ pub enum Msg {
 
     // ── cli::init ──────────────────────────────────────────────────────────
     InitRegistryExists { path: String },
+    InitRegistryGit { path: String },
     InitSuccess { path: String },
     InitLanguageSelect,
     InitLanguageSet { lang: String },
@@ -122,6 +123,8 @@ pub enum Msg {
     InitFoundResources { count: usize },
     InitResourceItem { kind: String, name: String, detail: String },
     InitAddHint { cmd: String },
+    InitScannedProjects { projects: usize, skills: usize },
+    InitScanProjectsError { error: String },
 
     // ── cli::add ───────────────────────────────────────────────────────────
     AddInvalidScope { scope: String },
@@ -225,6 +228,11 @@ pub enum Msg {
     SyncPushing { count: usize },
     SyncPushed { count: usize },
     SyncCommitFile { file: String },
+    SyncManifestLoadError { error: String },
+    SyncCopySkillError { name: String, error: String },
+    SyncManifestSaveError { error: String },
+    SyncDiscoveredSkills { count: usize, new: usize },
+    SyncScanProjectsError { error: String },
 
     // ── cli::resolve ──────────────────────────────────────────────────────
     ResolveNotInitialized,
@@ -345,12 +353,20 @@ pub enum Msg {
     WatchNoServiceFile { path: String },
     WatchSystemctlDisableWarning,
     WatchServiceDisabled { path: String },
+    WatchPaused,
+    WatchResumed,
+    WatchAlreadyPaused,
+    WatchAlreadyRunning,
 
     // ── cli::hook ────────────────────────────────────────────────────────
     HookInstalled { path: String },
     HookAlreadyInstalled,
     HookRemoved { path: String },
     HookNotFound,
+
+    // ── cli::remote ──────────────────────────────────────────────────────
+    RemoteAdded { name: String, url: String },
+    RemoteRemoved { name: String },
 
     // ── tui::selector ────────────────────────────────────────────────────
     SelectorConfigurePrompt,
@@ -385,6 +401,22 @@ pub enum Msg {
     DiffUseRemote,
     DiffOpenEditor,
 
+    // ── tui::selector (remote skills) ───────────────────────────────────
+    SelectorRemoteSkillsPrompt,
+    SelectorRemoteSkillsCancelled,
+    SelectorRemoteSkillsEmpty,
+    SelectorRemoteSkillItem { name: String, source: String },
+    SelectorInstallScopePrompt,
+    SelectorInstallScopeCancelled,
+    SelectorInstallScopeGlobal,
+    SelectorInstallScopeProject,
+    SelectorProjectPickerPrompt,
+    SelectorProjectPickerCancelled,
+    SelectorProjectPickerEmpty,
+    SelectorDryRunHeader,
+    SelectorDryRunSkill { name: String, target: String },
+    SelectorDryRunEmpty,
+
     // ── watcher::fs_watcher ─────────────────────────────────────────────
     WatcherStarted,
     WatcherWatching { path: String },
@@ -404,6 +436,13 @@ pub enum Msg {
     WatcherPushed,
     WatcherPushFailed { error: String },
     WatcherPushLocal,
+    WatcherAutoSyncDisabled,
+
+    // ── registry::discover ─────────────────────────────────────────────
+    DiscoveryScanningProjects,
+    DiscoveryScannedProjects { projects: usize, skills: usize },
+    DiscoveryNoProjectsDir,
+    DiscoverySkillRegistered { name: String },
 
     // ── installer::skill_installer ──────────────────────────────────────
     InstallerInstalled { name: String },
@@ -441,6 +480,7 @@ impl Msg {
             Msg::ContextResolvePaths => "Failed to resolve Claude paths".into(),
 
             Msg::InitRegistryExists { path } => format!("Registry already exists at {}\nUse `skillsync sync` to update, or remove the directory to start fresh.", path),
+            Msg::InitRegistryGit { path } => format!("Git bare repo (for sync): {}", path),
             Msg::InitSuccess { path } => format!("Initialized new SkillSync registry at {}", path),
             Msg::InitLanguageSelect => "Select your preferred language:".into(),
             Msg::InitLanguageSet { lang } => format!("Language set to {}. This can be changed via SKILLSYNC_LANG env var.", lang),
@@ -452,6 +492,8 @@ impl Msg {
             Msg::InitFoundResources { count } => format!("Found {} existing resource(s) that could be imported:", count),
             Msg::InitResourceItem { kind, name, detail } => format!("[{}] {} — {}", kind, name, detail),
             Msg::InitAddHint { cmd } => format!("Use '{}' to add these to the registry.", cmd),
+            Msg::InitScannedProjects { projects, skills } => format!("Scanned {} project(s), found {} skill(s)", projects, skills),
+            Msg::InitScanProjectsError { error } => format!("Failed to scan projects: {}", error),
 
             Msg::AddInvalidScope { scope } => format!("Invalid scope '{}'. Must be 'global' or 'shared'.", scope),
             Msg::AddPathNotExist { path } => format!("Path '{}' does not exist. Check the path and try again.", path),
@@ -474,7 +516,7 @@ impl Msg {
             Msg::ListNoResourcesOfType { kind } => format!("No {} resources found in the registry.", kind),
             Msg::ListNoResources => "No resources found in the registry.".into(),
             Msg::ListUseAddHint { cmd } => format!("Use '{}' to add resources.", cmd),
-            Msg::ListLocalSkillsFound { count } => format!("Found {} local skill(s) not in registry (run 'skillsync init' to import):", count),
+            Msg::ListLocalSkillsFound { count } => format!("Found {} local skill(s) not in registry:", count),
             Msg::ListColName => "Name".into(),
             Msg::ListColType => "Type".into(),
             Msg::ListColScope => "Scope".into(),
@@ -547,6 +589,11 @@ impl Msg {
             Msg::SyncPushing { count } => format!("\nPushing {} local change(s)...", count),
             Msg::SyncPushed { count } => format!("Pushed {} change(s) to remote.", count),
             Msg::SyncCommitFile { file } => format!("  - {}", file),
+            Msg::SyncManifestLoadError { error } => format!("Failed to load manifest: {}", error),
+            Msg::SyncCopySkillError { name, error } => format!("Failed to copy skill '{}': {}", name, error),
+            Msg::SyncManifestSaveError { error } => format!("Failed to save manifest: {}", error),
+            Msg::SyncDiscoveredSkills { count, new } => format!("Found {} skill(s) from projects, {} new", count, new),
+            Msg::SyncScanProjectsError { error } => format!("Failed to scan projects: {}", error),
 
             Msg::ResolveNotInitialized => "Registry not initialized. Run 'skillsync init' first.".into(),
             Msg::ResolveNoConflicts => "No conflicts to resolve.".into(),
@@ -660,11 +707,18 @@ impl Msg {
             Msg::WatchNoServiceFile { path } => format!("No service file found at {}. Service may not be installed.", path),
             Msg::WatchSystemctlDisableWarning => "systemctl disable returned non-zero exit code. Continuing with file removal.".into(),
             Msg::WatchServiceDisabled { path } => format!("Service disabled and removed: {}", path),
+            Msg::WatchPaused => "Auto-sync paused. Set auto_sync=true to resume.".into(),
+            Msg::WatchResumed => "Auto-sync resumed.".into(),
+            Msg::WatchAlreadyPaused => "Auto-sync is already paused.".into(),
+            Msg::WatchAlreadyRunning => "Auto-sync is already running.".into(),
 
             Msg::HookInstalled { path } => format!("Installed SessionStart hook into {}", path),
             Msg::HookAlreadyInstalled => "SkillSync hook is already installed".into(),
             Msg::HookRemoved { path } => format!("Removed SkillSync hook from {}", path),
             Msg::HookNotFound => "No SkillSync hook found to remove".into(),
+
+            Msg::RemoteAdded { name, url } => format!("Added remote '{}' = {}", name, url),
+            Msg::RemoteRemoved { name } => format!("Removed remote '{}'", name),
 
             Msg::SelectorConfigurePrompt => "How would you like to configure this project?".into(),
             Msg::SelectorConfigureCancelled => "Configuration method selection was cancelled".into(),
@@ -696,6 +750,21 @@ impl Msg {
             Msg::DiffUseRemote => "Use remote   — discard local changes".into(),
             Msg::DiffOpenEditor => "Open editor  — manually resolve in $EDITOR".into(),
 
+            Msg::SelectorRemoteSkillsPrompt => "Select remote skills to install:".into(),
+            Msg::SelectorRemoteSkillsCancelled => "Remote skills selection was cancelled".into(),
+            Msg::SelectorRemoteSkillsEmpty => "No new remote skills found.".into(),
+            Msg::SelectorRemoteSkillItem { name, source } => format!("[skill] {} — from {}", name, source),
+            Msg::SelectorInstallScopePrompt => "Where to install selected skills?".into(),
+            Msg::SelectorInstallScopeCancelled => "Install scope selection was cancelled".into(),
+            Msg::SelectorInstallScopeGlobal => "Global       — install to ~/.claude/skills/".into(),
+            Msg::SelectorInstallScopeProject => "Project      — install to a specific project".into(),
+            Msg::SelectorProjectPickerPrompt => "Select target project:".into(),
+            Msg::SelectorProjectPickerCancelled => "Project selection was cancelled".into(),
+            Msg::SelectorProjectPickerEmpty => "No projects with skillsync.yaml found.".into(),
+            Msg::SelectorDryRunHeader => "=== Dry Run Preview ===".into(),
+            Msg::SelectorDryRunSkill { name, target } => format!("  {} → {}", name, target),
+            Msg::SelectorDryRunEmpty => "No skills selected for dry run.".into(),
+
             Msg::WatcherStarted => "File watcher started. Press Ctrl+C to stop.".into(),
             Msg::WatcherWatching { path } => format!("  Watching: {}", path),
             Msg::WatcherDirNotExist { path } => format!("  Directory does not exist, skipping: {}", path),
@@ -714,6 +783,12 @@ impl Msg {
             Msg::WatcherPushed => "  Pushed to origin.".into(),
             Msg::WatcherPushFailed { error } => format!("  Push to origin failed: {:#}", error),
             Msg::WatcherPushLocal => "  Changes are committed locally. Push will be retried on next change.".into(),
+            Msg::WatcherAutoSyncDisabled => "  Auto-sync is disabled (auto_sync=false in config). Skipping push.".into(),
+
+            Msg::DiscoveryScanningProjects => "Scanning projects for skills...".into(),
+            Msg::DiscoveryScannedProjects { projects, skills } => format!("Scanned {} project(s), found {} skill(s)", projects, skills),
+            Msg::DiscoveryNoProjectsDir => "No projects directory found. Create ~/projects/ to enable project skill discovery.".into(),
+            Msg::DiscoverySkillRegistered { name } => format!("Skill '{}' registered in manifest", name),
 
             Msg::InstallerInstalled { name } => format!("installed {}", name),
             Msg::InstallerUpdated { name } => format!("updated {}", name),
@@ -745,6 +820,7 @@ impl Msg {
             Msg::ContextResolvePaths => "无法解析 Claude 路径".into(),
 
             Msg::InitRegistryExists { path } => format!("Registry 已存在：{}\n使用 `skillsync sync` 更新，或删除该目录后重新初始化。", path),
+            Msg::InitRegistryGit { path } => format!("Git 裸仓库（用于同步）：{}", path),
             Msg::InitSuccess { path } => format!("已初始化 SkillSync registry：{}", path),
             Msg::InitLanguageSelect => "请选择您偏好的语言：".into(),
             Msg::InitLanguageSet { lang } => format!("语言已设置为 {}。可通过 SKILLSYNC_LANG 环境变量修改。", lang),
@@ -756,6 +832,8 @@ impl Msg {
             Msg::InitFoundResources { count } => format!("找到 {} 个已安装的资源，可能需要导入：", count),
             Msg::InitResourceItem { kind, name, detail } => format!("[{}] {} — {}", kind, name, detail),
             Msg::InitAddHint { cmd } => format!("使用 '{}' 将这些资源添加到 registry。", cmd),
+            Msg::InitScannedProjects { projects, skills } => format!("已扫描 {} 个项目，发现 {} 个 skill", projects, skills),
+            Msg::InitScanProjectsError { error } => format!("扫描项目失败：{}", error),
 
             Msg::AddInvalidScope { scope } => format!("无效的 scope '{}'。必须为 'global' 或 'shared'。", scope),
             Msg::AddPathNotExist { path } => format!("路径 '{}' 不存在。请检查路径后重试。", path),
@@ -778,7 +856,7 @@ impl Msg {
             Msg::ListNoResourcesOfType { kind } => format!("registry 中没有 {} 资源。", kind),
             Msg::ListNoResources => "registry 中没有资源。".into(),
             Msg::ListUseAddHint { cmd } => format!("使用 '{}' 添加资源。", cmd),
-            Msg::ListLocalSkillsFound { count } => format!("发现 {} 个本地 skill 未加入 registry（运行 'skillsync init' 导入）：", count),
+            Msg::ListLocalSkillsFound { count } => format!("发现 {} 个本地 skill 未加入 registry：", count),
             Msg::ListColName => "名称".into(),
             Msg::ListColType => "类型".into(),
             Msg::ListColScope => "作用域".into(),
@@ -851,6 +929,11 @@ impl Msg {
             Msg::SyncPushing { count } => format!("\n正在推送 {} 个本地更改...", count),
             Msg::SyncPushed { count } => format!("已推送 {} 个更改到远程。", count),
             Msg::SyncCommitFile { file } => format!("  - {}", file),
+            Msg::SyncManifestLoadError { error } => format!("加载 manifest 失败：{}", error),
+            Msg::SyncCopySkillError { name, error } => format!("复制 skill '{}' 失败：{}", name, error),
+            Msg::SyncManifestSaveError { error } => format!("保存 manifest 失败：{}", error),
+            Msg::SyncDiscoveredSkills { count, new } => format!("从项目发现 {} 个 skill，{} 个新增", count, new),
+            Msg::SyncScanProjectsError { error } => format!("扫描项目失败：{}", error),
 
             Msg::ResolveNotInitialized => "Registry 未初始化。请先运行 'skillsync init'。".into(),
             Msg::ResolveNoConflicts => "没有需要解决的冲突。".into(),
@@ -964,11 +1047,18 @@ impl Msg {
             Msg::WatchNoServiceFile { path } => format!("未在 {} 找到服务文件。服务可能未安装。", path),
             Msg::WatchSystemctlDisableWarning => "systemctl disable 返回非零退出码。继续删除文件。".into(),
             Msg::WatchServiceDisabled { path } => format!("服务已禁用并删除：{}", path),
+            Msg::WatchPaused => "自动同步已暂停。设置 auto_sync=true 可恢复。".into(),
+            Msg::WatchResumed => "自动同步已恢复。".into(),
+            Msg::WatchAlreadyPaused => "自动同步已处于暂停状态。".into(),
+            Msg::WatchAlreadyRunning => "自动同步已在运行。".into(),
 
             Msg::HookInstalled { path } => format!("已将 SessionStart hook 安装到 {}", path),
             Msg::HookAlreadyInstalled => "SkillSync hook 已安装".into(),
             Msg::HookRemoved { path } => format!("已从 {} 移除 SkillSync hook", path),
             Msg::HookNotFound => "未找到 SkillSync hook，无法移除".into(),
+
+            Msg::RemoteAdded { name, url } => format!("已添加 remote '{}' = {}", name, url),
+            Msg::RemoteRemoved { name } => format!("已移除 remote '{}'", name),
 
             Msg::SelectorConfigurePrompt => "您想如何配置此项目？".into(),
             Msg::SelectorConfigureCancelled => "配置方式选择已取消".into(),
@@ -1000,6 +1090,21 @@ impl Msg {
             Msg::DiffUseRemote => "使用远程   — 丢弃本地更改".into(),
             Msg::DiffOpenEditor => "打开编辑器 — 在 $EDITOR 中手动解决".into(),
 
+            Msg::SelectorRemoteSkillsPrompt => "选择要安装的远程 skills：".into(),
+            Msg::SelectorRemoteSkillsCancelled => "远程 skills 选择已取消".into(),
+            Msg::SelectorRemoteSkillsEmpty => "未发现新的远程 skills。".into(),
+            Msg::SelectorRemoteSkillItem { name, source } => format!("[skill] {} — 来自 {}", name, source),
+            Msg::SelectorInstallScopePrompt => "将选中的 skills 安装到哪里？".into(),
+            Msg::SelectorInstallScopeCancelled => "安装位置选择已取消".into(),
+            Msg::SelectorInstallScopeGlobal => "全局         — 安装到 ~/.claude/skills/".into(),
+            Msg::SelectorInstallScopeProject => "项目         — 安装到指定项目".into(),
+            Msg::SelectorProjectPickerPrompt => "选择目标项目：".into(),
+            Msg::SelectorProjectPickerCancelled => "项目选择已取消".into(),
+            Msg::SelectorProjectPickerEmpty => "未找到包含 skillsync.yaml 的项目。".into(),
+            Msg::SelectorDryRunHeader => "=== 预览模式 ===".into(),
+            Msg::SelectorDryRunSkill { name, target } => format!("  {} → {}", name, target),
+            Msg::SelectorDryRunEmpty => "未选择任何 skill 进行预览。".into(),
+
             Msg::WatcherStarted => "文件监控已启动。按 Ctrl+C 停止。".into(),
             Msg::WatcherWatching { path } => format!("  监控中：{}", path),
             Msg::WatcherDirNotExist { path } => format!("  目录不存在，跳过：{}", path),
@@ -1018,6 +1123,12 @@ impl Msg {
             Msg::WatcherPushed => "  已推送到 origin。".into(),
             Msg::WatcherPushFailed { error } => format!("  推送到 origin 失败：{:#}", error),
             Msg::WatcherPushLocal => "  更改已在本地提交。将在下次更改时重试推送。".into(),
+            Msg::WatcherAutoSyncDisabled => "  自动同步已禁用（config 中 auto_sync=false）。跳过推送。".into(),
+
+            Msg::DiscoveryScanningProjects => "正在扫描项目中的 skills...".into(),
+            Msg::DiscoveryScannedProjects { projects, skills } => format!("已扫描 {} 个项目，发现 {} 个 skill", projects, skills),
+            Msg::DiscoveryNoProjectsDir => "未找到 projects 目录。创建 ~/projects/ 以启用项目 skill 发现功能。".into(),
+            Msg::DiscoverySkillRegistered { name } => format!("Skill '{}' 已注册到 manifest", name),
 
             Msg::InstallerInstalled { name } => format!("已安装 {}", name),
             Msg::InstallerUpdated { name } => format!("已更新 {}", name),

@@ -78,6 +78,7 @@ fn add_skill(path_str: &str, scope: ResourceScope) -> Result<()> {
         tags: vec![],
         source: None,
         backup_hash: Some(hash),
+        source_path: None,
     };
 
     manifest.skills.insert(name.clone(), entry);

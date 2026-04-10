@@ -214,6 +214,7 @@ mod tests {
                 tags: vec![],
                 source: None,
                 backup_hash: None,
+                source_path: None,
             },
         );
 
@@ -253,6 +254,7 @@ mod tests {
                 tags: vec![],
                 source: None,
                 backup_hash: None,
+                source_path: None,
             },
         );
 

@@ -1,5 +1,4 @@
 use std::fs;
-use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use console::style;
@@ -8,23 +7,23 @@ use inquire::Select;
 
 #[allow(unused_imports)]
 use crate::t;
-use crate::claude::paths::ClaudePaths;
+use crate::claude::paths::{ClaudePaths, SkillSyncPaths};
 use crate::i18n::{Lang, Msg};
 use crate::registry::manifest::Manifest;
 
-/// Return the default registry path: `~/.skillsync/registry/`.
-fn registry_path() -> Result<PathBuf> {
-    let home = dirs::home_dir().context(t!(Msg::ContextHomeDir))?;
-    Ok(home.join(".skillsync").join("registry"))
-}
-
 /// `skillsync init` — create a new local registry from scratch.
 fn init_new(quiet: bool) -> Result<()> {
-    let reg = registry_path()?;
+    let ss_paths = SkillSyncPaths::resolve()?;
+    let registry_git = &ss_paths.registry_git;
+    let registry = &ss_paths.registry;
 
-    // Guard: registry must not already exist.
-    if reg.exists() {
-        bail!("{}", t!(Msg::InitRegistryExists { path: reg.display().to_string() }));
+    // Guard: neither registry.git nor registry must already exist.
+    if registry_git.exists() || registry.exists() {
+        bail!(
+            "Registry already exists at {}\n\
+             Use `skillsync sync` to update, or remove the directory to start fresh.",
+            registry.display()
+        );
     }
 
     // Prompt language selection if SKILLSYNC_LANG is not set.
@@ -36,12 +35,27 @@ fn init_new(quiet: bool) -> Result<()> {
         crate::i18n::lang()
     };
 
-    // Create directory structure.
+    // Create bare git repo at registry.git/.
+    fs::create_dir_all(registry_git)
+        .with_context(|| t!(Msg::ContextCreateDir { path: registry_git.display().to_string() }))?;
+    let _bare = Repository::init_bare(registry_git)
+        .with_context(|| t!(Msg::ContextFailedToOpenRepo))?;
+
+    // Create working tree repo at registry/ with origin pointing to registry.git/.
+    fs::create_dir_all(registry)
+        .with_context(|| t!(Msg::ContextCreateDir { path: registry.display().to_string() }))?;
+    let working_repo = Repository::init(registry)
+        .with_context(|| t!(Msg::ContextFailedToOpenRepo))?;
+    working_repo
+        .remote("origin", registry_git.to_string_lossy().as_ref())
+        .with_context(|| "Failed to add origin remote")?;
+
+    // Create directory structure inside the working tree.
     let dirs = [
-        reg.join("resources").join("skills"),
-        reg.join("resources").join("plugins"),
-        reg.join("resources").join("mcp"),
-        reg.join("profiles"),
+        registry.join("resources").join("skills"),
+        registry.join("resources").join("plugins"),
+        registry.join("resources").join("mcp"),
+        registry.join("profiles"),
     ];
     for dir in &dirs {
         fs::create_dir_all(dir)
@@ -49,24 +63,66 @@ fn init_new(quiet: bool) -> Result<()> {
     }
 
     // Write empty manifest.
-    let manifest_path = reg.join("manifest.yaml");
-    Manifest::default_empty()
+    let manifest_path = registry.join("manifest.yaml");
+    let mut manifest = Manifest::default_empty();
+
+    // Scan ~/projects/*/.claude/skills/ for existing skills and add to manifest.
+    match crate::registry::discover::scan_projects_skills() {
+        Ok(discovered) if !discovered.is_empty() => {
+            crate::registry::discover::register_discovered_skills(&mut manifest, &discovered);
+            if !quiet {
+                println!(
+                    "  {} {}",
+                    style("·").dim(),
+                    t!(Msg::InitScannedProjects {
+                        projects: discovered.len(),
+                        skills: discovered.iter().filter(|s| s.project_path.to_string_lossy().contains(".claude/skills")).count()
+                    })
+                );
+            }
+        }
+        Ok(_) => {}
+        Err(e) => {
+            if !quiet {
+                eprintln!(
+                    "{} {}",
+                    style("⚠").yellow(),
+                    t!(Msg::InitScanProjectsError { error: e.to_string() })
+                );
+            }
+        }
+    }
+
+    manifest
         .save(&manifest_path)
         .context(t!(Msg::ContextFailedToSaveManifest))?;
 
-    // Initialize git repository.
-    Repository::init(&reg)
-        .with_context(|| t!(Msg::ContextFailedToOpenRepo))?;
+    // Create initial commit in the working tree.
+    {
+        use git2::IndexAddOption;
+        let mut index = working_repo.index()?;
+        index.add_all(["*"].iter(), IndexAddOption::DEFAULT, None)?;
+        index.write()?;
+        let tree_oid = index.write_tree()?;
+        let tree = working_repo.find_tree(tree_oid)?;
+        let sig = working_repo.signature()?;
+        working_repo.commit(Some("HEAD"), &sig, &sig, "chore: initial registry", &tree, &[])?;
+    }
 
     if !quiet {
         println!(
             "{} {}",
             style("✓").green().bold(),
-            t!(Msg::InitSuccess { path: reg.display().to_string() })
+            t!(Msg::InitSuccess { path: registry.display().to_string() })
         );
         println!(
             "  {}",
             t!(Msg::InitLanguageSet { lang: lang.tag().to_string() })
+        );
+        println!(
+            "  {} {}",
+            style("·").dim(),
+            t!(Msg::InitRegistryGit { path: registry_git.display().to_string() })
         );
     }
 
@@ -87,29 +143,44 @@ fn prompt_language_selection() -> Result<Lang> {
 
 /// `skillsync init --from <url>` — clone a remote registry and validate it.
 fn init_from(url: &str, quiet: bool) -> Result<()> {
-    let reg = registry_path()?;
+    let ss_paths = SkillSyncPaths::resolve()?;
+    let registry_git = &ss_paths.registry_git;
+    let registry = &ss_paths.registry;
 
-    // Guard: registry must not already exist.
-    if reg.exists() {
+    // Guard: neither registry.git nor registry must already exist.
+    if registry_git.exists() || registry.exists() {
         bail!(
-            "Registry already exists at {}\n\
-             Use `skillsync sync` to update, or remove the directory to start fresh.",
-            reg.display()
+            "Registry already exists.\n\
+             Use `skillsync sync` to update, or remove the directory to start fresh."
         );
     }
 
     // Ensure parent directory exists.
-    if let Some(parent) = reg.parent() {
+    if let Some(parent) = registry.parent() {
         fs::create_dir_all(parent)
             .with_context(|| t!(Msg::ContextCreateDir { path: parent.display().to_string() }))?;
     }
 
-    // Clone remote repository.
-    Repository::clone(url, &reg)
+    // Clone remote repository to registry/ (regular working tree).
+    let _working_repo = Repository::clone(url, registry)
         .with_context(|| t!(Msg::ContextFailedToOpenRepo))?;
 
+    // Create registry.git/ as a bare repo for local sync.
+    fs::create_dir_all(registry_git)
+        .with_context(|| t!(Msg::ContextCreateDir { path: registry_git.display().to_string() }))?;
+    let _bare = Repository::init_bare(registry_git)
+        .with_context(|| "Failed to init bare registry.git")?;
+
+    // Add registry.git/ as a "backup" remote in the working repo.
+    {
+        let working = Repository::open(registry)?;
+        working
+            .remote("backup", registry_git.to_string_lossy().as_ref())
+            .with_context(|| "Failed to add backup remote")?;
+    }
+
     // Validate that manifest.yaml exists and is parseable.
-    let manifest_path = reg.join("manifest.yaml");
+    let manifest_path = registry.join("manifest.yaml");
     if !manifest_path.exists() {
         bail!("{}", t!(Msg::ContextFailedToLoadManifest));
     }

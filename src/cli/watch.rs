@@ -6,19 +6,28 @@ use std::path::PathBuf;
 use std::process::Command;
 
 use anyhow::{bail, Context, Result};
+use console::style;
 
 #[allow(unused_imports)]
 use crate::t;
 use crate::i18n::Msg;
 use crate::watcher::fs_watcher;
 
-pub fn run(daemon: bool, install: bool, uninstall: bool) -> Result<()> {
+pub fn run(daemon: bool, install: bool, uninstall: bool, pause: bool, resume: bool) -> Result<()> {
     if install {
         return install_service();
     }
 
     if uninstall {
         return uninstall_service();
+    }
+
+    if pause {
+        return pause_sync();
+    }
+
+    if resume {
+        return resume_sync();
     }
 
     if daemon {
@@ -402,4 +411,58 @@ fn uninstall_systemd_service() -> Result<()> {
 fn skillsync_log_dir() -> Result<PathBuf> {
     let home = dirs::home_dir().with_context(|| t!(Msg::ContextHomeDir))?;
     Ok(home.join(".skillsync"))
+}
+
+// ---------------------------------------------------------------------------
+// Pause / Resume (5.3, 5.4)
+// ---------------------------------------------------------------------------
+
+/// Pause auto-sync by setting auto_sync=false in config.
+fn pause_sync() -> Result<()> {
+    let mut config = crate::registry::config::GlobalConfig::load()
+        .unwrap_or_else(|_| crate::registry::config::GlobalConfig::default());
+
+    if !config.auto_sync {
+        eprintln!(
+            "{} {}",
+            style("ℹ").blue(),
+            t!(Msg::WatchAlreadyPaused)
+        );
+        return Ok(());
+    }
+
+    config.set_auto_sync(false);
+    config.save()?;
+
+    eprintln!(
+        "{} {}",
+        style("✓").green().bold(),
+        t!(Msg::WatchPaused)
+    );
+    Ok(())
+}
+
+/// Resume auto-sync by setting auto_sync=true in config.
+fn resume_sync() -> Result<()> {
+    let mut config = crate::registry::config::GlobalConfig::load()
+        .unwrap_or_else(|_| crate::registry::config::GlobalConfig::default());
+
+    if config.auto_sync {
+        eprintln!(
+            "{} {}",
+            style("ℹ").blue(),
+            t!(Msg::WatchAlreadyRunning)
+        );
+        return Ok(());
+    }
+
+    config.set_auto_sync(true);
+    config.save()?;
+
+    eprintln!(
+        "{} {}",
+        style("✓").green().bold(),
+        t!(Msg::WatchResumed)
+    );
+    Ok(())
 }

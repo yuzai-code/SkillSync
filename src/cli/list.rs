@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use console::style;
+use unicode_width::UnicodeWidthStr;
 
 use crate::i18n::Msg;
 #[allow(unused_imports)]
@@ -61,6 +62,16 @@ struct TableRow {
     scope: String,
     version: String,
     source: String,
+}
+
+/// Format a string with padding for display width (handles CJK characters).
+fn pad_to_width(s: &str, width: usize) -> String {
+    let display_width = UnicodeWidthStr::width(s);
+    if display_width >= width {
+        s.to_string()
+    } else {
+        format!("{}{}", s, " ".repeat(width - display_width))
+    }
 }
 
 pub fn run(type_filter: Option<&str>) -> Result<()> {
@@ -166,11 +177,17 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
             .then_with(|| a.name.cmp(&b.name))
     });
 
-    // Compute column widths for alignment.
-    let name_width = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
-    let scope_width = rows.iter().map(|r| r.scope.len()).max().unwrap_or(5).max(5);
-    let version_width = rows.iter().map(|r| r.version.len()).max().unwrap_or(7).max(7);
-    let source_width = rows.iter().map(|r| r.source.len()).max().unwrap_or(6).max(6);
+    // Compute column widths for alignment (using unicode display width).
+    let name_width = rows.iter().map(|r| UnicodeWidthStr::width(r.name.as_str())).max().unwrap_or(4).max(4);
+    let scope_width = rows.iter().map(|r| UnicodeWidthStr::width(r.scope.as_str())).max().unwrap_or(5).max(5);
+    let version_width = rows.iter().map(|r| UnicodeWidthStr::width(r.version.as_str())).max().unwrap_or(7).max(7);
+    let source_width = rows.iter().map(|r| UnicodeWidthStr::width(r.source.as_str())).max().unwrap_or(6).max(6);
+
+    // Also consider header widths
+    let name_width = name_width.max(UnicodeWidthStr::width("名称"));
+    let scope_width = scope_width.max(UnicodeWidthStr::width("作用域"));
+    let version_width = version_width.max(UnicodeWidthStr::width("版本"));
+    let source_width = source_width.max(UnicodeWidthStr::width("来源"));
 
     // Group by type for better readability
     let mut current_type = "";
@@ -189,15 +206,11 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
             };
             println!("  {}", type_header);
             println!(
-                "  {:<name_w$}  {:<scope_w$}  {:<ver_w$}  {:<src_w$}",
-                style("名称").dim(),
-                style("作用域").dim(),
-                style("版本").dim(),
-                style("来源").dim(),
-                name_w = name_width,
-                scope_w = scope_width,
-                ver_w = version_width,
-                src_w = source_width,
+                "  {}  {}  {}  {}",
+                style(pad_to_width("名称", name_width)).dim(),
+                style(pad_to_width("作用域", scope_width)).dim(),
+                style(pad_to_width("版本", version_width)).dim(),
+                style(pad_to_width("来源", source_width)).dim(),
             );
         }
 
@@ -215,14 +228,11 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
         };
 
         println!(
-            "  {:<name_w$}  {:<scope_w$}  {:<ver_w$}  {}",
-            row.name,
-            style(&row.scope).dim(),
-            style(&row.version).dim(),
+            "  {}  {}  {}  {}",
+            pad_to_width(&row.name, name_width),
+            style(pad_to_width(&row.scope, scope_width)).dim(),
+            style(pad_to_width(&row.version, version_width)).dim(),
             source_display,
-            name_w = name_width,
-            scope_w = scope_width,
-            ver_w = version_width,
         );
     }
 

@@ -30,6 +30,12 @@ pub fn open_repo(path: &Path) -> Result<Repository> {
         .with_context(|| format!("Failed to open git repository at {}", path.display()))
 }
 
+/// Open an existing bare git repository at `path`.
+pub fn open_bare_repo(path: &Path) -> Result<Repository> {
+    Repository::open_bare(path)
+        .with_context(|| format!("Failed to open bare git repository at {}", path.display()))
+}
+
 /// Get repository status — returns `(has_changes, changed_files)`.
 ///
 /// `has_changes` is `true` when there are any staged, unstaged, or untracked
@@ -71,6 +77,30 @@ pub fn stage_all(repo: &Repository) -> Result<()> {
     index
         .update_all(["*"].iter(), None)
         .context("Failed to update index for deleted files")?;
+
+    index.write().context("Failed to write index")?;
+    Ok(())
+}
+
+/// Stage only skill-related changes: resources/skills/ and manifest.yaml.
+/// This is used for incremental sync that only tracks skills.
+pub fn stage_skills_only(repo: &Repository) -> Result<()> {
+    let mut index = repo.index().context("Failed to get repository index")?;
+
+    // Stage all files under resources/skills/
+    index
+        .add_all(["resources/skills/*"].iter(), IndexAddOption::DEFAULT, None)
+        .context("Failed to stage skills directory")?;
+
+    // Stage manifest.yaml changes.
+    index
+        .add_all(["manifest.yaml"].iter(), IndexAddOption::DEFAULT, None)
+        .context("Failed to stage manifest.yaml")?;
+
+    // Also pick up deletions in the skills directory.
+    index
+        .update_all(["resources/skills/*"].iter(), None)
+        .context("Failed to update index for deleted skill files")?;
 
     index.write().context("Failed to write index")?;
     Ok(())
@@ -121,7 +151,7 @@ pub fn commit(repo: &Repository, message: &str) -> Result<git2::Oid> {
 // ---------------------------------------------------------------------------
 
 /// Build `RemoteCallbacks` that try SSH-agent authentication.
-fn make_callbacks<'a>() -> git2::RemoteCallbacks<'a> {
+pub fn make_callbacks<'a>() -> git2::RemoteCallbacks<'a> {
     let mut callbacks = git2::RemoteCallbacks::new();
     callbacks.credentials(|_url, username_from_url, _allowed| {
         let user = username_from_url.unwrap_or("git");
@@ -350,6 +380,112 @@ pub fn push_origin(repo: &Repository) -> Result<()> {
         .with_context(|| format!("Failed to push to origin (branch: {})", local_branch))?;
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// LWW Conflict Resolution (7.2)
+// ---------------------------------------------------------------------------
+
+/// Resolve merge conflicts using Last-Write-Wins strategy.
+///
+/// For each conflicting file, compares commit timestamps and keeps the newer version.
+/// Returns the list of resolved file paths.
+pub fn resolve_conflicts_lww(repo: &Repository) -> Result<Vec<String>> {
+    let mut index = repo.index().context("Failed to get repository index")?;
+
+    if !index.has_conflicts() {
+        return Ok(Vec::new());
+    }
+
+    let mut resolved: Vec<String> = Vec::new();
+
+    // Get HEAD commit time for "ours" side
+    let head_time = repo
+        .head()
+        .ok()
+        .and_then(|head| head.target())
+        .and_then(|oid| repo.find_commit(oid).ok())
+        .map(|commit| commit.time().seconds());
+
+    // Get FETCH_HEAD commit time for "theirs" side
+    let fetch_time = repo
+        .find_reference("FETCH_HEAD")
+        .ok()
+        .and_then(|ref_| ref_.target())
+        .and_then(|oid| repo.find_commit(oid).ok())
+        .map(|commit| commit.time().seconds());
+
+    // Collect conflicts first (can't iterate while modifying)
+    let conflicts: Vec<_> = index
+        .conflicts()
+        .context("Failed to read merge conflicts")?
+        .filter_map(|c| c.ok())
+        .collect();
+
+    for conflict in conflicts {
+        let path = conflict
+            .our
+            .as_ref()
+            .or(conflict.their.as_ref())
+            .or(conflict.ancestor.as_ref())
+            .and_then(|e| String::from_utf8(e.path.clone()).ok());
+
+        if let Some(path_str) = path.clone() {
+            // LWW: compare timestamps, keep newer
+            let keep_ours = match (head_time, fetch_time) {
+                (Some(local), Some(remote)) => local >= remote, // Keep local if equal or newer
+                (Some(_), None) => true,  // No remote time, keep local
+                (None, Some(_)) => false, // No local time, keep remote
+                (None, None) => true,     // No times available, keep local (safe default)
+            };
+
+            if keep_ours {
+                // Keep our version - checkout from HEAD
+                if let Some(our) = &conflict.our {
+                    let blob = repo.find_blob(our.id)
+                        .context("Failed to find blob for our version")?;
+                    let content = blob.content();
+                    let full_path = repo.workdir()
+                        .context("Repository has no working directory")?
+                        .join(&path_str);
+                    if let Some(parent) = full_path.parent() {
+                        std::fs::create_dir_all(parent)
+                            .with_context(|| format!("Failed to create parent dir for {}", path_str))?;
+                    }
+                    std::fs::write(&full_path, content)
+                        .with_context(|| format!("Failed to write resolved file: {}", path_str))?;
+                }
+            } else {
+                // Keep their version - checkout from FETCH_HEAD
+                if let Some(their) = &conflict.their {
+                    let blob = repo.find_blob(their.id)
+                        .context("Failed to find blob for their version")?;
+                    let content = blob.content();
+                    let full_path = repo.workdir()
+                        .context("Repository has no working directory")?
+                        .join(&path_str);
+                    if let Some(parent) = full_path.parent() {
+                        std::fs::create_dir_all(parent)
+                            .with_context(|| format!("Failed to create parent dir for {}", path_str))?;
+                    }
+                    std::fs::write(&full_path, content)
+                        .with_context(|| format!("Failed to write resolved file: {}", path_str))?;
+                }
+            }
+
+            resolved.push(path_str);
+        }
+    }
+
+    // Re-add all resolved files to the index
+    for path in &resolved {
+        index.add_path(Path::new(path))
+            .with_context(|| format!("Failed to stage resolved file: {}", path))?;
+    }
+
+    index.write().context("Failed to write resolved index")?;
+
+    Ok(resolved)
 }
 
 // ---------------------------------------------------------------------------

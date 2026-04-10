@@ -38,6 +38,41 @@ pub struct SyncRecord {
     pub timestamp: String,
 }
 
+/// A row from the `discovered_projects` table.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct DiscoveredProject {
+    pub id: i64,
+    pub project_path: String,
+    pub git_remote: Option<String>,
+    pub first_discovered_at: String,
+    pub last_scanned_at: String,
+    pub status: ProjectStatus,
+}
+
+/// Status of a discovered project.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProjectStatus {
+    Active,
+    Removed,
+}
+
+impl ProjectStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ProjectStatus::Active => "active",
+            ProjectStatus::Removed => "removed",
+        }
+    }
+}
+
+impl std::fmt::Display for ProjectStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // StateDb
 // ---------------------------------------------------------------------------
@@ -100,6 +135,15 @@ impl StateDb {
                     status    TEXT NOT NULL,
                     summary   TEXT,
                     timestamp TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS discovered_projects (
+                    id                 INTEGER PRIMARY KEY,
+                    project_path       TEXT NOT NULL UNIQUE,
+                    git_remote         TEXT,
+                    first_discovered_at TEXT NOT NULL,
+                    last_scanned_at    TEXT NOT NULL,
+                    status             TEXT NOT NULL DEFAULT 'active'
                 );
                 ",
             )
@@ -331,6 +375,88 @@ impl StateDb {
             .context("Failed to collect sync records")?;
 
         Ok(rows)
+    }
+
+    // -- discovered_projects ---------------------------------------------------
+
+    /// Insert a newly discovered project.
+    pub fn insert_discovered_project(
+        &self,
+        project_path: &str,
+        git_remote: Option<&str>,
+    ) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "INSERT OR IGNORE INTO discovered_projects
+                    (project_path, git_remote, first_discovered_at, last_scanned_at, status)
+                 VALUES (?1, ?2, ?3, ?4, 'active')",
+                params![project_path, git_remote, now, now],
+            )
+            .context("Failed to insert discovered project")?;
+        Ok(())
+    }
+
+    /// Update the last scanned timestamp for a project.
+    pub fn update_project_scan_time(&self, project_path: &str) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        self.conn
+            .execute(
+                "UPDATE discovered_projects SET last_scanned_at = ?1 WHERE project_path = ?2",
+                params![now, project_path],
+            )
+            .context("Failed to update project scan time")?;
+        Ok(())
+    }
+
+    /// Get all discovered projects (active only by default).
+    pub fn get_discovered_projects(&self, include_removed: bool) -> Result<Vec<DiscoveredProject>> {
+        let query = if include_removed {
+            "SELECT id, project_path, git_remote, first_discovered_at, last_scanned_at, status
+             FROM discovered_projects ORDER BY project_path"
+        } else {
+            "SELECT id, project_path, git_remote, first_discovered_at, last_scanned_at, status
+             FROM discovered_projects WHERE status = 'active' ORDER BY project_path"
+        };
+
+        let mut stmt = self
+            .conn
+            .prepare(query)
+            .context("Failed to prepare discovered projects query")?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                let status_str: String = row.get(5)?;
+                let status = if status_str == "removed" {
+                    ProjectStatus::Removed
+                } else {
+                    ProjectStatus::Active
+                };
+                Ok(DiscoveredProject {
+                    id: row.get(0)?,
+                    project_path: row.get(1)?,
+                    git_remote: row.get(2)?,
+                    first_discovered_at: row.get(3)?,
+                    last_scanned_at: row.get(4)?,
+                    status,
+                })
+            })
+            .context("Failed to query discovered projects")?
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .context("Failed to collect discovered projects")?;
+
+        Ok(rows)
+    }
+
+    /// Mark a project as removed.
+    pub fn mark_project_removed(&self, project_path: &str) -> Result<()> {
+        self.conn
+            .execute(
+                "UPDATE discovered_projects SET status = 'removed' WHERE project_path = ?1",
+                params![project_path],
+            )
+            .context("Failed to mark project as removed")?;
+        Ok(())
     }
 }
 

@@ -103,7 +103,9 @@ impl ProjectPaths {
 pub struct SkillSyncPaths {
     /// `~/.skillsync/`
     pub home: PathBuf,
-    /// `~/.skillsync/registry/`
+    /// `~/.skillsync/registry.git/` (bare git repo)
+    pub registry_git: PathBuf,
+    /// `~/.skillsync/registry/` (working tree)
     pub registry: PathBuf,
     /// `~/.skillsync/registry/manifest.yaml`
     pub manifest: PathBuf,
@@ -132,6 +134,7 @@ impl SkillSyncPaths {
     /// Create a `SkillSyncPaths` instance rooted at a custom directory.
     /// Useful for testing without touching the real `~/.skillsync/`.
     pub fn with_root(root: PathBuf) -> Self {
+        let registry_git = root.join("registry.git");
         let registry = root.join("registry");
         let resources = registry.join("resources");
         Self {
@@ -143,6 +146,7 @@ impl SkillSyncPaths {
             state_db: root.join("state.db"),
             resources,
             registry,
+            registry_git,
             home: root,
         }
     }
@@ -275,6 +279,7 @@ mod tests {
         let paths = SkillSyncPaths::with_root(dir.path().to_path_buf());
 
         assert_eq!(paths.home, dir.path());
+        assert_eq!(paths.registry_git, dir.path().join("registry.git"));
         assert_eq!(paths.registry, dir.path().join("registry"));
         assert_eq!(paths.manifest, dir.path().join("registry/manifest.yaml"));
         assert_eq!(paths.resources, dir.path().join("registry/resources"));

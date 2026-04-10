@@ -70,6 +70,11 @@ pub struct SkillEntry {
     /// SHA256 content hash used for integrity checks.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_hash: Option<String>,
+
+    /// Original source path (for discovered skills).
+    /// Records where the skill was discovered from (e.g., `~/projects/project-X/.claude/skills/my-tool`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_path: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -359,6 +364,7 @@ mod tests {
                 tags: vec!["docs".into(), "yuque".into()],
                 source: None,
                 backup_hash: None,
+                source_path: None,
             },
         );
         m.plugins.insert(
@@ -418,6 +424,7 @@ mod tests {
                 tags: vec![],
                 source: None, // missing for community
                 backup_hash: None,
+                source_path: None,
             },
         );
         m.plugins.insert(
@@ -561,6 +568,7 @@ mod tests {
                 tags: vec![],
                 source: None,
                 backup_hash: None,
+                source_path: None,
             },
         );
 
@@ -585,6 +593,7 @@ mod tests {
                     skill: "comm-skill".into(),
                 }),
                 backup_hash: None,
+                source_path: None,
             },
         );
 
@@ -686,6 +695,7 @@ mod tests {
                 tags: vec![],
                 source: None,
                 backup_hash: None,
+                source_path: None,
             },
         );
 

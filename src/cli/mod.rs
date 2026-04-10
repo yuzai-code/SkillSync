@@ -15,6 +15,7 @@ pub mod hook;
 pub mod search;
 pub mod update;
 pub mod install;
+pub mod remote;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -130,7 +131,11 @@ pub enum Commands {
     },
 
     /// Bidirectional sync (pull + push)
-    Sync {},
+    Sync {
+        /// Skip interactive skill selection
+        #[arg(long)]
+        skip_select: bool,
+    },
 
     /// Resolve sync conflicts
     Resolve {},
@@ -157,12 +162,26 @@ pub enum Commands {
         /// Uninstall system service
         #[arg(long)]
         uninstall: bool,
+
+        /// Pause auto-sync (auto_sync=false)
+        #[arg(long)]
+        pause: bool,
+
+        /// Resume auto-sync (auto_sync=true)
+        #[arg(long)]
+        resume: bool,
     },
 
     /// Manage Claude Code hooks
     Hook {
         #[command(subcommand)]
         action: HookAction,
+    },
+
+    /// Manage git remotes for the registry
+    Remote {
+        #[command(subcommand)]
+        action: RemoteAction,
     },
 }
 
@@ -195,6 +214,24 @@ pub enum HookAction {
     Remove {},
 }
 
+#[derive(Subcommand)]
+pub enum RemoteAction {
+    /// Add a remote
+    Add {
+        /// Remote name
+        name: String,
+        /// Remote URL
+        url: String,
+    },
+    /// Remove a remote
+    Remove {
+        /// Remote name
+        name: String,
+    },
+    /// List all remotes
+    List {},
+}
+
 pub fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Init { from } => init::run(from, cli.quiet),
@@ -210,11 +247,12 @@ pub fn run(cli: Cli) -> Result<()> {
         Commands::Install { global } => install::run(global),
         Commands::Pull { timeout } => pull::run(timeout, cli.quiet),
         Commands::Push { auto } => push::run(auto, cli.quiet),
-        Commands::Sync {} => sync_cmd::run(cli.quiet),
+        Commands::Sync { skip_select } => sync_cmd::run(cli.quiet, skip_select),
         Commands::Resolve {} => resolve::run(),
         Commands::Profile { action } => profile::run(action),
         Commands::Doctor {} => doctor::run(),
-        Commands::Watch { daemon, install, uninstall } => watch::run(daemon, install, uninstall),
+        Commands::Watch { daemon, install, uninstall, pause, resume } => watch::run(daemon, install, uninstall, pause, resume),
         Commands::Hook { action } => hook::run(action),
+        Commands::Remote { action } => remote::run(action, cli.quiet),
     }
 }

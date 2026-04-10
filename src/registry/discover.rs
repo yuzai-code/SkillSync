@@ -1,15 +1,22 @@
 // Project skills discovery - scan ~/projects/*/.claude/skills/ for local skills
+// Also scan ~/.claude/ for global plugins and MCP servers
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use git2::Repository;
+use serde::Deserialize;
 
 #[allow(unused_imports)]
 use crate::i18n::Msg;
-use crate::registry::manifest::{Manifest, SkillEntry, SkillType, ResourceScope};
+use crate::registry::manifest::{Manifest, McpServerEntry, PluginEntry, ResourceScope, SkillEntry, SkillType};
 use crate::registry::resource::compute_hash;
+
+// ---------------------------------------------------------------------------
+// Discovered Resource Types
+// ---------------------------------------------------------------------------
 
 /// A skill discovered from a project directory.
 #[derive(Debug, Clone)]
@@ -23,6 +30,75 @@ pub struct DiscoveredSkill {
     /// Content hash for deduplication.
     pub content_hash: String,
 }
+
+/// A plugin discovered from settings.json.
+#[derive(Debug, Clone)]
+pub struct DiscoveredPlugin {
+    /// Plugin name.
+    pub name: String,
+    /// Marketplace identifier.
+    pub marketplace: String,
+    /// Source type (github, npm, etc.).
+    pub source: String,
+}
+
+/// An MCP server discovered from .mcp.json.
+#[derive(Debug, Clone)]
+pub struct DiscoveredMcp {
+    /// MCP server name.
+    pub name: String,
+    /// Command to run.
+    pub command: String,
+    /// Command arguments.
+    pub args: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Settings.json Structures
+// ---------------------------------------------------------------------------
+
+/// Claude settings.json structure (partial).
+#[derive(Debug, Deserialize)]
+struct ClaudeSettings {
+    #[serde(default)]
+    enabled_plugins: HashMap<String, bool>,
+    #[serde(default, rename = "enabledPlugins")]
+    enabled_plugins_v2: HashMap<String, bool>,
+    #[serde(default, rename = "extraKnownMarketplaces")]
+    extra_marketplaces: HashMap<String, MarketplaceInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MarketplaceInfo {
+    #[serde(default)]
+    source: Option<MarketplaceSource>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MarketplaceSource {
+    #[serde(default, rename = "source")]
+    source_type: Option<String>,
+    #[serde(default)]
+    repo: Option<String>,
+}
+
+/// MCP configuration file structure.
+#[derive(Debug, Deserialize)]
+struct McpConfig {
+    #[serde(default, rename = "mcpServers")]
+    mcp_servers: HashMap<String, McpServerConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+struct McpServerConfig {
+    command: String,
+    #[serde(default)]
+    args: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Skill Discovery
+// ---------------------------------------------------------------------------
 
 /// Scan `~/.claude/skills/` for global skills.
 ///
@@ -191,6 +267,132 @@ pub fn scan_all_local_skills() -> Result<Vec<DiscoveredSkill>> {
 
     skills.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(skills)
+}
+
+// ---------------------------------------------------------------------------
+// Plugin Discovery
+// ---------------------------------------------------------------------------
+
+/// Scan `~/.claude/settings.json` for enabled plugins.
+///
+/// Reads `enabledPlugins` and `extraKnownMarketplaces` to build plugin entries.
+pub fn scan_global_plugins() -> Result<Vec<DiscoveredPlugin>> {
+    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let settings_path = home.join(".claude").join("settings.json");
+
+    if !settings_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&settings_path)
+        .with_context(|| format!("Failed to read settings.json: {}", settings_path.display()))?;
+
+    let settings: ClaudeSettings = serde_json::from_str(&content)
+        .with_context(|| "Failed to parse settings.json")?;
+
+    let mut discovered = Vec::new();
+
+    // Parse enabledPlugins (format: "name@marketplace": true)
+    for plugin_key in settings.enabled_plugins_v2.keys() {
+        if let Some((name, marketplace)) = parse_plugin_key(plugin_key) {
+            // Try to get source from extraKnownMarketplaces
+            let source = settings
+                .extra_marketplaces
+                .get(&marketplace)
+                .and_then(|m| m.source.as_ref())
+                .and_then(|s| s.source_type.clone())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            discovered.push(DiscoveredPlugin {
+                name,
+                marketplace,
+                source,
+            });
+        }
+    }
+
+    discovered.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(discovered)
+}
+
+/// Parse a plugin key like "name@marketplace" into (name, marketplace).
+fn parse_plugin_key(key: &str) -> Option<(String, String)> {
+    let parts: Vec<&str> = key.splitn(2, '@').collect();
+    if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+        Some((parts[0].to_string(), parts[1].to_string()))
+    } else {
+        None
+    }
+}
+
+/// Add discovered plugins to the manifest.
+pub fn register_discovered_plugins(manifest: &mut Manifest, discovered: &[DiscoveredPlugin]) {
+    for plugin in discovered {
+        // Skip if already exists
+        if manifest.plugins.contains_key(&plugin.name) {
+            continue;
+        }
+
+        let entry = PluginEntry {
+            marketplace: plugin.marketplace.clone(),
+            version: "latest".to_string(),
+            git_sha: None,
+            repo: None,
+        };
+
+        manifest.plugins.insert(plugin.name.clone(), entry);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MCP Server Discovery
+// ---------------------------------------------------------------------------
+
+/// Scan `~/.claude/.mcp.json` for MCP server configurations.
+pub fn scan_global_mcp() -> Result<Vec<DiscoveredMcp>> {
+    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let mcp_path = home.join(".claude").join(".mcp.json");
+
+    if !mcp_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let content = fs::read_to_string(&mcp_path)
+        .with_context(|| format!("Failed to read .mcp.json: {}", mcp_path.display()))?;
+
+    let config: McpConfig = serde_json::from_str(&content)
+        .with_context(|| "Failed to parse .mcp.json")?;
+
+    let mut discovered = Vec::new();
+
+    for (name, server) in config.mcp_servers {
+        discovered.push(DiscoveredMcp {
+            name,
+            command: server.command,
+            args: server.args,
+        });
+    }
+
+    discovered.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(discovered)
+}
+
+/// Add discovered MCP servers to the manifest.
+pub fn register_discovered_mcp(manifest: &mut Manifest, discovered: &[DiscoveredMcp]) {
+    for mcp in discovered {
+        // Skip if already exists
+        if manifest.mcp_servers.contains_key(&mcp.name) {
+            continue;
+        }
+
+        let entry = McpServerEntry {
+            command: mcp.command.clone(),
+            args: mcp.args.clone(),
+            scope: ResourceScope::Shared,
+        };
+
+        manifest.mcp_servers.insert(mcp.name.clone(), entry);
+    }
 }
 
 /// Check if a directory is a git repository.

@@ -177,7 +177,7 @@ fn build_resource_options(manifest: &Manifest) -> Vec<ResourceOption> {
     plugin_names.sort();
     for name in plugin_names {
         let entry = &manifest.plugins[name];
-        let label = format!("[plugin] {} v{} @ {}", name, entry.version, entry.marketplace);
+        let label = format!("[plugin] {} v{} @ {} [marketplace]", name, entry.version, entry.marketplace);
         options.push(ResourceOption {
             label,
             name: name.clone(),
@@ -195,7 +195,7 @@ fn build_resource_options(manifest: &Manifest) -> Vec<ResourceOption> {
             crate::registry::ResourceScope::Shared => "shared",
         };
         let label = format!(
-            "[mcp]    {} ({}) — {} {}",
+            "[mcp]    {} ({}) [config] — {} {}",
             name,
             scope_tag,
             entry.command,
@@ -294,7 +294,10 @@ pub fn confirm_preview(selected: &SelectedResources, manifest: &Manifest) -> Res
             t!(Msg::SelectorPluginsLabel)
         );
         for name in &selected.plugins {
-            println!("    {} {}", style("+").green(), name);
+            let marketplace = manifest.plugins.get(name)
+                .map(|e| e.marketplace.clone())
+                .unwrap_or_else(|| "unknown".to_string());
+            println!("    {} {} [{}]", style("+").green(), name, style(&marketplace).dim());
         }
     }
 
@@ -305,7 +308,10 @@ pub fn confirm_preview(selected: &SelectedResources, manifest: &Manifest) -> Res
             t!(Msg::SelectorMcpLabel)
         );
         for name in &selected.mcp {
-            println!("    {} {}", style("+").green(), name);
+            let command = manifest.mcp_servers.get(name)
+                .map(|e| e.command.clone())
+                .unwrap_or_else(|| "unknown".to_string());
+            println!("    {} {} [{}]", style("+").green(), name, style(&command).dim());
         }
     }
 

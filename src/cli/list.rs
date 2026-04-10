@@ -98,7 +98,7 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
                 name: name.clone(),
                 resource_type: "skill".into(),
                 scope: format!("{:?}", entry.scope).to_lowercase(),
-                version: entry.version.clone(),
+                version: format!("v{}", entry.version),
                 source: extract_source(entry.source_path.as_deref()),
             });
         }
@@ -120,11 +120,17 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
     // Collect MCP servers.
     if type_filter.is_none() || type_filter == Some("mcp") {
         for (name, entry) in &manifest.mcp_servers {
+            // Truncate command display if too long
+            let cmd_display = if entry.command.len() > 15 {
+                format!("{}...", &entry.command[..12])
+            } else {
+                entry.command.clone()
+            };
             rows.push(TableRow {
                 name: name.clone(),
                 resource_type: "mcp".into(),
                 scope: format!("{:?}", entry.scope).to_lowercase(),
-                version: entry.command.clone(),
+                version: cmd_display,
                 source: "config".to_string(),
             });
         }
@@ -145,54 +151,76 @@ pub fn run(type_filter: Option<&str>) -> Result<()> {
         return Ok(());
     }
 
-    // Sort rows by type then name for stable output.
+    // Sort rows by type priority (skill > plugin > mcp) then name for stable output.
     rows.sort_by(|a, b| {
-        a.resource_type
-            .cmp(&b.resource_type)
+        let type_order = |t: &str| -> u8 {
+            match t {
+                "skill" => 0,
+                "plugin" => 1,
+                "mcp" => 2,
+                _ => 3,
+            }
+        };
+        type_order(&a.resource_type)
+            .cmp(&type_order(&b.resource_type))
             .then_with(|| a.name.cmp(&b.name))
     });
 
     // Compute column widths for alignment.
     let name_width = rows.iter().map(|r| r.name.len()).max().unwrap_or(4).max(4);
-    let type_width = rows.iter().map(|r| r.resource_type.len()).max().unwrap_or(4).max(4);
     let scope_width = rows.iter().map(|r| r.scope.len()).max().unwrap_or(5).max(5);
     let version_width = rows.iter().map(|r| r.version.len()).max().unwrap_or(7).max(7);
     let source_width = rows.iter().map(|r| r.source.len()).max().unwrap_or(6).max(6);
 
-    // Print header.
-    println!(
-        "  {:<name_w$}  {:<type_w$}  {:<scope_w$}  {:<ver_w$}  {:<src_w$}",
-        style(t!(Msg::ListColName)).bold().underlined(),
-        style(t!(Msg::ListColType)).bold().underlined(),
-        style(t!(Msg::ListColScope)).bold().underlined(),
-        style(t!(Msg::ListColVersion)).bold().underlined(),
-        style("来源").bold().underlined(),
-        name_w = name_width,
-        type_w = type_width,
-        scope_w = scope_width,
-        ver_w = version_width,
-        src_w = source_width,
-    );
-
-    // Print rows.
+    // Group by type for better readability
+    let mut current_type = "";
     for row in &rows {
+        // Print type header when type changes
+        if row.resource_type != current_type {
+            if !current_type.is_empty() {
+                println!();
+            }
+            current_type = &row.resource_type;
+            let type_header = match current_type {
+                "skill" => style("Skills").cyan().bold(),
+                "plugin" => style("Plugins").magenta().bold(),
+                "mcp" => style("MCP Servers").yellow().bold(),
+                _ => style(current_type).bold(),
+            };
+            println!("  {}", type_header);
+            println!(
+                "  {:<name_w$}  {:<scope_w$}  {:<ver_w$}  {:<src_w$}",
+                style("名称").dim(),
+                style("作用域").dim(),
+                style("版本").dim(),
+                style("来源").dim(),
+                name_w = name_width,
+                scope_w = scope_width,
+                ver_w = version_width,
+                src_w = source_width,
+            );
+        }
+
+        // Color by source
         let source_display = if row.source == "global" {
             style(&row.source).green().to_string()
         } else if row.source.starts_with("project:") {
             style(&row.source).cyan().to_string()
+        } else if row.source == "marketplace" {
+            style(&row.source).magenta().to_string()
+        } else if row.source == "config" {
+            style(&row.source).yellow().to_string()
         } else {
-            row.source.clone()
+            style(&row.source).dim().to_string()
         };
 
         println!(
-            "  {:<name_w$}  {:<type_w$}  {:<scope_w$}  {:<ver_w$}  {}",
+            "  {:<name_w$}  {:<scope_w$}  {:<ver_w$}  {}",
             row.name,
-            row.resource_type,
-            row.scope,
-            row.version,
+            style(&row.scope).dim(),
+            style(&row.version).dim(),
             source_display,
             name_w = name_width,
-            type_w = type_width,
             scope_w = scope_width,
             ver_w = version_width,
         );

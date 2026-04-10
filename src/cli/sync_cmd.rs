@@ -191,6 +191,68 @@ pub fn run(quiet: bool, skip_select: bool) -> Result<()> {
                 }
             }
         }
+
+        // Scan and register plugins
+        match discover::scan_global_plugins() {
+            Ok(plugins) if !plugins.is_empty() => {
+                let new_count = plugins.iter().filter(|p| !manifest.plugins.contains_key(&p.name)).count();
+                discover::register_discovered_plugins(&mut manifest, &plugins);
+                if !quiet && new_count > 0 {
+                    println!(
+                        "  {} Discovered {} plugin(s), {} new",
+                        style("·").dim(),
+                        plugins.len(),
+                        new_count
+                    );
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                if !quiet {
+                    eprintln!(
+                        "{} Failed to scan plugins: {}",
+                        style("⚠").yellow(),
+                        e
+                    );
+                }
+            }
+        }
+
+        // Scan and register MCP servers
+        match discover::scan_global_mcp() {
+            Ok(mcp_servers) if !mcp_servers.is_empty() => {
+                let new_count = mcp_servers.iter().filter(|m| !manifest.mcp_servers.contains_key(&m.name)).count();
+                discover::register_discovered_mcp(&mut manifest, &mcp_servers);
+                if !quiet && new_count > 0 {
+                    println!(
+                        "  {} Discovered {} MCP server(s), {} new",
+                        style("·").dim(),
+                        mcp_servers.len(),
+                        new_count
+                    );
+                }
+            }
+            Ok(_) => {}
+            Err(e) => {
+                if !quiet {
+                    eprintln!(
+                        "{} Failed to scan MCP servers: {}",
+                        style("⚠").yellow(),
+                        e
+                    );
+                }
+            }
+        }
+
+        // Save manifest after all discoveries
+        if let Err(e) = manifest.save(&manifest_path) {
+            let err_msg = format!("{:#}", e);
+            eprintln!(
+                "{} {}",
+                style("⚠").yellow(),
+                t!(Msg::SyncManifestSaveError { error: err_msg })
+            );
+        }
     }
 
     // ---- Phase 1c: TUI Selection for new skills (7.1) ----

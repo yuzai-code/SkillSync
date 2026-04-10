@@ -28,8 +28,8 @@ cargo fmt                    # 格式化代码
 
 代码库采用分层架构，七个模块通过 `src/main.rs` 和 `src/lib.rs` 组织：
 
-- **`cli/`** — 命令定义（clap derive）和分发。每个子命令一个文件（如 `cli/init.rs`、`cli/add.rs`）。`mod.rs` 定义 `Cli`、`Commands` 枚举，通过 `run()` 路由。共 16 个子命令全部实现。
-- **`registry/`** — 核心数据层。`manifest.rs` 定义 YAML schema 类型（`Manifest`、`SkillEntry`、`PluginEntry`、`McpServerEntry`、`ProfileConfig`、`SkillSyncConfig`），提供 load/save/validate。`resource.rs` 提供确定性 SHA-256 哈希和深拷贝工具。`git_ops.rs` 封装 libgit2 操作（clone/fetch/merge/push/commit）。
+- **`cli/`** — 命令定义（clap derive）和分发。每个子命令一个文件（如 `cli/init.rs`、`cli/add.rs`）。`mod.rs` 定义 `Cli`、`Commands` 枚举，通过 `run()` 路由。共 16 个子命令全部实现。`remote.rs` 实现远程 registry 操作。
+- **`registry/`** — 核心数据层。`manifest.rs` 定义 YAML schema 类型（`Manifest`、`SkillEntry`、`PluginEntry`、`McpServerEntry`、`ProfileConfig`、`SkillSyncConfig`），提供 load/save/validate。`resource.rs` 提供确定性 SHA-256 哈希和深拷贝工具。`git_ops.rs` 封装 libgit2 操作（clone/fetch/merge/push/commit）。`discover.rs` 实现自动发现本地 skills 功能。`config.rs` 管理 registry 配置。
 - **`installer/`** — 将资源安装到 Claude Code 文件系统。`skill_installer.rs` 复制 skills 并基于哈希判断跳过/更新，`mcp_installer.rs` 合并 `.mcp.json`，`plugin_installer.rs` 更新 `settings.json` 插件配置，`settings_merger.rs` 生成 `skillsync.yaml` 和 `skillsync.lock`。
 - **`claude/`** — Claude Code 集成。`paths.rs` 发现 `~/.claude/` 路径（`ClaudePaths`、`ProjectPaths`、`SkillSyncPaths` 三个结构体），`settings.rs` 操作 `settings.json`，`hooks.rs` 管理 SessionStart hook 注入/移除。
 - **`state/`** — SQLite 状态数据库（`db.rs`），`StateDb` 跟踪已安装资源和同步历史。
@@ -90,6 +90,7 @@ cargo fmt                    # 格式化代码
 
 - `openspec/specs/` — 主 specs（7 个 capability：registry-management、interactive-selector、sync-engine、doctor、profiles、i18n、hooks-integration）
 - `openspec/changes/archive/` — 已归档的 change
+- `openspec/changes/` — 进行中的 change（含 auto-discovery-sync 等未归档功能）
 
 ## 开发注意事项
 
@@ -100,3 +101,15 @@ cargo fmt                    # 格式化代码
 - Git 操作使用 `git2` crate，SSH 认证通过 ssh-agent
 - 回复和输出使用中文
 - `init` 命令首次运行时会交互式选择语言（中文/English），语言偏好保存至 `~/.skillsync/.lang`
+
+## Auto-Discovery
+
+`sync` 命令自动发现本地 skills，扫描以下目录：
+- `~/.claude/skills/` — 全局 skills
+- `~/projects/` — 标准项目目录
+- `~/Desktop/project/` — 替代项目目录
+
+`list` 和 `use` 命令会显示每个 skill 的来源（global 或 project: xxx）。
+`manifest.yaml` 中的 `source_path` 字段记录 skill 的原始路径。
+
+非交互环境使用 `skillsync sync --skip-select` 跳过 TUI 选择。
